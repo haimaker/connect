@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
       - run: npm ci
       - run: npm run build
       - run: npm test
@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # Required for npm provenance (signed build attestation via OIDC).
+      # Required for npm trusted publishing (OIDC). No NPM_TOKEN needed.
       id-token: write
     steps:
       # Third-party actions pinned to full commit SHAs (mutable tags are a
@@ -37,13 +37,13 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: "https://registry.npmjs.org"
+      # Trusted publishing requires npm >= 11.5.1; Node 22 ships an older npm.
+      - run: npm install -g npm@latest
       - run: npm ci
       - run: npm run build
       - run: npm test
-      # --provenance ties the published tarball to this workflow run, so
-      # consumers can verify it was built here and not tampered with.
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # OIDC trusted publishing: npm authenticates via the workflow's id-token
+      # (no token), and provenance is generated automatically.
+      - run: npm publish --access public

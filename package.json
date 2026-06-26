@@ -1,6 +1,6 @@
 {
   "name": "@haimaker/connect",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pure-TypeScript npx CLI that writes each supported coding agent's native config so it talks directly to api.haimaker.ai, then exits. No router, no proxy, no telemetry.",
   "license": "MIT",
   "author": "Haimaker",
