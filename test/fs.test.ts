@@ -137,7 +137,7 @@ describe("env-file", () => {
   });
 
   it("quotes a value that needs it, leaves plain keys unquoted", () => {
-    expect(upsertEnvVar("", "K", "hm_abc-123")).toBe("K=hm_abc-123\n");
+    expect(upsertEnvVar("", "K", "sk-abc-123")).toBe("K=sk-abc-123\n");
     expect(upsertEnvVar("", "K", "has space#hash")).toBe('K="has space#hash"\n');
   });
 

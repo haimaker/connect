@@ -26,7 +26,7 @@ sends no telemetry.
 npx -y @haimaker/connect
 
 # Or configure one agent non-interactively
-HAIMAKER_API_KEY=hm_... npx @haimaker/connect --claude
+HAIMAKER_API_KEY=sk-... npx @haimaker/connect --claude
 ```
 
 You'll need a Haimaker API key; create one at https://app.haimaker.ai/api-keys.
@@ -128,7 +128,7 @@ config.
 
 ```bash
 # Configure Claude Code with a specific model
-HAIMAKER_API_KEY=hm_... npx @haimaker/connect --claude --model deepseek/deepseek-v3
+HAIMAKER_API_KEY=sk-... npx @haimaker/connect --claude --model deepseek/deepseek-v3
 
 # Configure opencode for the current repo (writes ./opencode.json, gitignores it)
 npx @haimaker/connect --opencode --project
@@ -204,7 +204,7 @@ and a single bill. It's drop-in OpenAI-compatible:
 
 ```bash
 export OPENAI_BASE_URL=https://api.haimaker.ai/v1
-export OPENAI_API_KEY=hm_...
+export OPENAI_API_KEY=sk-...
 # everything else stays the same
 ```
 
