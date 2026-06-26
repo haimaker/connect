@@ -1,0 +1,11 @@
+# Dependencies and build output
+node_modules
+dist
+
+# npm pack output
+*.tgz
+
+# Secret-bearing artifacts this tool can produce (never commit these)
+.env
+*.haimaker.bak
+opencode.json

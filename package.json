@@ -1,0 +1,36 @@
+{
+  "name": "@haimaker/connect",
+  "version": "0.1.0",
+  "description": "Pure-TypeScript npx CLI that writes each supported coding agent's native config so it talks directly to api.haimaker.ai, then exits. No router, no proxy, no telemetry.",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "connect": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@iarna/toml": "2.2.5",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8",
+    "@types/node": "^20.17.10"
+  }
+}
