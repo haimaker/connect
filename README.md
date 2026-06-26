@@ -23,14 +23,13 @@ sends no telemetry.
 
 ```bash
 # Interactive: auto-detect installed agents, pick which to configure, paste a key
-npx @haimaker/connect
+npx -y @haimaker/connect
 
 # Or configure one agent non-interactively
 HAIMAKER_API_KEY=hm_... npx @haimaker/connect --claude
 ```
 
-You'll need a Haimaker API key; create one at https://haimaker.ai/keys. The first
-1,000 requests are free.
+You'll need a Haimaker API key; create one at https://app.haimaker.ai/api-keys.
 
 By default it configures the `haimaker/auto` model (an auto-router that picks a
 model per request) and runs one live request to confirm the connection works
@@ -42,12 +41,12 @@ before exiting.
 
 | Agent | Flag | Surface | Status |
 |---|---|---|---|
-| Claude Code | `--claude` | Anthropic Messages | Stable |
-| opencode | `--opencode` | OpenAI Chat | Stable, supports `--project` |
 | Hermes | `--hermes` | OpenAI Chat | Stable (config-only)¹ |
+| OpenClaw | `--openclaw` | OpenAI Chat | Stable |
+| opencode | `--opencode` | OpenAI Chat | Stable, supports `--project` |
+| Claude Code | `--claude` | Anthropic Messages | Stable |
 | Codex | `--codex` | OpenAI Responses | Stable² |
 | Cline | `--cline` | OpenAI Chat | Stable (CLI)³ |
-| OpenClaw | `--openclaw` | OpenAI Chat | Stable |
 | Kilo Code | `--kilo` | OpenAI Chat | Stable |
 
 All seven are verified end-to-end against real installs on macOS (config path,
@@ -74,7 +73,7 @@ Select several at once: `npx @haimaker/connect --claude --opencode`.
 ## Usage
 
 ```
-npx @haimaker/connect [agent flags] [options]
+npx -y @haimaker/connect [agent flags] [options]
 ```
 
 Run it with no agent flags to start the interactive wizard: it detects installed
@@ -209,22 +208,9 @@ export OPENAI_API_KEY=hm_...
 # everything else stays the same
 ```
 
-New models show up on launch day. And when a customer needs inference to run in a
-specific region or under a compliance tier, you set it in the request instead of
-re-platforming:
+New models show up on launch day. 
 
-```bash
-curl https://api.haimaker.ai/v1/chat/completions \
-  -H "Authorization: Bearer $HAIMAKER_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "deepseek/deepseek-v4",
-    "provider": { "compliance": "AE" },
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
-The same API works for a weekend prototype and a regulated production deployment,
+The same API works for a weekend prototype and a production deployment,
 so what you build on now won't turn into a migration project later. More at
 [haimaker.ai](https://haimaker.ai).
 
