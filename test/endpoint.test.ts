@@ -69,7 +69,7 @@ describe("constants", () => {
   it("exposes the canonical defaults", () => {
     expect(DEFAULT_HOST).toBe("https://api.haimaker.ai");
     expect(DEFAULT_MODEL).toBe("haimaker/auto");
-    expect(KEYS_URL).toBe("https://haimaker.ai/keys");
+    expect(KEYS_URL).toBe("https://app.haimaker.ai/api-keys");
   });
 });
 

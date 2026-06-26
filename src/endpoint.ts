@@ -35,7 +35,7 @@ export function ownsModelValue(model: unknown): boolean {
 }
 
 /** Where users go to create an API key. */
-export const KEYS_URL = "https://haimaker.ai/keys";
+export const KEYS_URL = "https://app.haimaker.ai/api-keys";
 
 /** The environment variable env-var agents (Codex) read the key from. */
 export const API_KEY_ENV = "HAIMAKER_API_KEY";
@@ -81,7 +81,7 @@ export function validateHost(input: string, opts: { allowInsecure?: boolean } = 
     if (!opts.allowInsecure) {
       throw new Error(
         `--host uses http://, which would send your API key in cleartext. ` +
-          `Use https://, or pass --allow-insecure-host to override (local testing only).`
+        `Use https://, or pass --allow-insecure-host to override (local testing only).`
       );
     }
   } else if (url.protocol !== "https:") {

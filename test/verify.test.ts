@@ -79,7 +79,7 @@ describe("verifySurface - 400 autoRouterHint", () => {
       expect(res.ok).toBe(false);
       expect(res.status).toBe(400);
       expect(res.autoRouterHint).toBe(true);
-      expect(res.message).toContain("haimaker.ai/keys");
+      expect(res.message).toContain("app.haimaker.ai/api-keys");
     });
   }
 
