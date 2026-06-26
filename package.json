@@ -3,6 +3,28 @@
   "version": "0.1.0",
   "description": "Pure-TypeScript npx CLI that writes each supported coding agent's native config so it talks directly to api.haimaker.ai, then exits. No router, no proxy, no telemetry.",
   "license": "MIT",
+  "author": "Haimaker",
+  "homepage": "https://github.com/haimaker/connect#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haimaker/connect.git"
+  },
+  "bugs": {
+    "url": "https://github.com/haimaker/connect/issues"
+  },
+  "keywords": [
+    "haimaker",
+    "cli",
+    "llm",
+    "openai-compatible",
+    "anthropic",
+    "claude-code",
+    "codex",
+    "opencode",
+    "cline",
+    "hermes",
+    "inference"
+  ],
   "type": "commonjs",
   "bin": {
     "connect": "dist/cli.js"
