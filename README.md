@@ -48,7 +48,7 @@ before exiting.
 | Codex | `--codex` | OpenAI Responses | Stable² |
 | Cline | `--cline` | OpenAI Chat | Stable (CLI)³ |
 | Kilo Code | `--kilo` | OpenAI Chat | Stable |
-| Pi | `--pi` | OpenAI Chat | Beta (source-validated) |
+| Pi | `--pi` | OpenAI Chat | Stable |
 
 The first seven integrations are verified end-to-end against real installs on
 macOS. Pi's config path and schema are validated against the coding-agent source;
