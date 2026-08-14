@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import lockfile from "proper-lockfile";
 
 import { piWriter } from "../src/agents/pi";
 import { InstallCtx, Scope } from "../src/agents/types";
@@ -41,6 +42,49 @@ function readConfig(dir: string, name: string): Record<string, any> {
   return JSON.parse(fs.readFileSync(path.join(agentDir(dir), name), "utf8"));
 }
 
+function resolvePiStoredLiteral(value: string): string {
+  if (value.startsWith("!")) throw new Error("command values are not literals");
+  let resolved = "";
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] !== "$") {
+      resolved += value[i];
+      continue;
+    }
+    const escaped = value[++i];
+    if (escaped !== "$" && escaped !== "!") {
+      throw new Error("test resolver only accepts Pi's literal escape sequences");
+    }
+    resolved += escaped;
+  }
+  return resolved;
+}
+
+function expectPiModelsSchema(config: Record<string, any>): void {
+  expect(config).toEqual(expect.any(Object));
+  expect(config.providers).toEqual(expect.any(Object));
+  for (const provider of Object.values(config.providers) as Array<Record<string, any>>) {
+    expect(provider.baseUrl).toEqual(expect.any(String));
+    expect(provider.api).toBe("openai-completions");
+    expect(provider.models).toEqual(expect.any(Array));
+    for (const model of provider.models) {
+      expect(model).toMatchObject({
+        id: expect.any(String),
+        name: expect.any(String),
+        reasoning: expect.any(Boolean),
+        input: expect.any(Array),
+        contextWindow: expect.any(Number),
+        maxTokens: expect.any(Number),
+        cost: {
+          input: expect.any(Number),
+          output: expect.any(Number),
+          cacheRead: expect.any(Number),
+          cacheWrite: expect.any(Number),
+        },
+      });
+    }
+  }
+}
+
 describe("piWriter metadata and detection", () => {
   it("uses Pi's Chat Completions surface and native models path", () => {
     const dir = tmp();
@@ -71,11 +115,11 @@ describe("piWriter metadata and detection", () => {
     );
   });
 
-  it("rejects a relative PI_CODING_AGENT_DIR instead of writing relative to cwd", () => {
+  it("matches Pi by preserving a relative PI_CODING_AGENT_DIR", () => {
     vi.stubEnv("PI_CODING_AGENT_DIR", "relative-agent-dir");
 
-    expect(() => piWriter.configPath({ kind: "user" })).toThrow(
-      /PI_CODING_AGENT_DIR must be an absolute path/i
+    expect(piWriter.configPath({ kind: "user" })).toBe(
+      path.join("relative-agent-dir", "models.json")
     );
   });
 });
@@ -91,7 +135,17 @@ describe("piWriter configure", () => {
           name: "Haimaker",
           baseUrl: "https://api.haimaker.ai/v1",
           api: "openai-completions",
-          models: [{ id: "haimaker/auto", name: "Haimaker Auto" }],
+          models: [
+            {
+              id: "auto",
+              name: "Haimaker Auto",
+              reasoning: true,
+              input: ["text", "image"],
+              contextWindow: 32768,
+              maxTokens: 4096,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            },
+          ],
         },
       },
     });
@@ -100,8 +154,9 @@ describe("piWriter configure", () => {
     });
     expect(readConfig(dir, "settings.json")).toEqual({
       defaultProvider: "haimaker",
-      defaultModel: "haimaker/auto",
+      defaultModel: "auto",
     });
+    expectPiModelsSchema(readConfig(dir, "models.json"));
   });
 
   it("writes all three files with mode 0600", async () => {
@@ -152,16 +207,72 @@ describe("piWriter configure", () => {
     const provider = readConfig(dir, "models.json").providers.haimaker;
     expect(provider.baseUrl).toBe("https://api.haimaker.ai/v1");
     expect(provider.models).toEqual([
-      { id: "openai/gpt-4o", name: "Haimaker openai/gpt-4o" },
+      {
+        id: "openai/gpt-4o",
+        name: "Haimaker openai/gpt-4o",
+        reasoning: true,
+        input: ["text", "image"],
+        contextWindow: 32768,
+        maxTokens: 4096,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
     ]);
     expect(readConfig(dir, "settings.json").defaultModel).toBe("openai/gpt-4o");
   });
 
   it("escapes Pi credential interpolation syntax so keys remain literal", async () => {
     const dir = tmp();
-    await piWriter.configure(ctx(dir, { apiKey: "!secret-$TOKEN" }));
+    const original = "!secret-$TOKEN";
+    await piWriter.configure(ctx(dir, { apiKey: original }));
 
-    expect(readConfig(dir, "auth.json").haimaker.key).toBe("$!secret-$$TOKEN");
+    const stored = readConfig(dir, "auth.json").haimaker.key;
+    expect(stored).toBe("$!secret-$$TOKEN");
+    expect(resolvePiStoredLiteral(stored)).toBe(original);
+  });
+
+  it("preserves Pi's environment snapshot on an existing credential", async () => {
+    const dir = tmp();
+    fs.mkdirSync(agentDir(dir), { recursive: true });
+    fs.writeFileSync(
+      path.join(agentDir(dir), "auth.json"),
+      JSON.stringify({
+        haimaker: { type: "api_key", key: "old", env: { KEY_PREFIX: "saved", COUNT: "2" } },
+      })
+    );
+
+    await piWriter.configure(ctx(dir));
+
+    expect(readConfig(dir, "auth.json").haimaker).toEqual({
+      type: "api_key",
+      key: KEY,
+      env: { KEY_PREFIX: "saved", COUNT: "2" },
+    });
+  });
+
+  it("waits for Pi's auth.json lock and preserves the competing update", async () => {
+    const dir = tmp();
+    const authFile = path.join(agentDir(dir), "auth.json");
+    fs.mkdirSync(agentDir(dir), { recursive: true });
+    fs.writeFileSync(authFile, JSON.stringify({ openai: { type: "api_key", key: "one" } }));
+    const release = await lockfile.lock(authFile, { realpath: false });
+    setTimeout(() => {
+      fs.writeFileSync(
+        authFile,
+        JSON.stringify({
+          openai: { type: "api_key", key: "one" },
+          anthropic: { type: "api_key", key: "two" },
+        })
+      );
+      void release();
+    }, 50);
+
+    await piWriter.configure(ctx(dir));
+
+    expect(readConfig(dir, "auth.json")).toMatchObject({
+      openai: { type: "api_key", key: "one" },
+      anthropic: { type: "api_key", key: "two" },
+      haimaker: { type: "api_key", key: KEY },
+    });
   });
 
   it("is idempotent and updates a default it already owns", async () => {
@@ -172,7 +283,15 @@ describe("piWriter configure", () => {
     const models = readConfig(dir, "models.json");
     expect(Object.keys(models.providers)).toEqual(["haimaker"]);
     expect(models.providers.haimaker.models).toEqual([
-      { id: "deepseek/deepseek-v3", name: "Haimaker deepseek/deepseek-v3" },
+      {
+        id: "deepseek/deepseek-v3",
+        name: "Haimaker deepseek/deepseek-v3",
+        reasoning: true,
+        input: ["text", "image"],
+        contextWindow: 32768,
+        maxTokens: 4096,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
     ]);
     expect(readConfig(dir, "settings.json")).toEqual({
       defaultProvider: "haimaker",
@@ -212,6 +331,30 @@ describe("piWriter configure", () => {
 });
 
 describe("piWriter uninstall", () => {
+  it("leaves the required providers object when Haimaker was the sole provider", async () => {
+    const dir = tmp();
+    await piWriter.configure(ctx(dir));
+    await piWriter.uninstall({ kind: "user", dir });
+
+    expect(readConfig(dir, "models.json")).toEqual({ providers: {} });
+    expect(readConfig(dir, "auth.json")).toEqual({});
+    expect(readConfig(dir, "settings.json")).toEqual({});
+    expectPiModelsSchema(readConfig(dir, "models.json"));
+  });
+
+  it("scrubs the Haimaker key from the auth backup after repeated configure runs", async () => {
+    const dir = tmp();
+    const authBackup = path.join(agentDir(dir), "auth.json.haimaker.bak");
+    await piWriter.configure(ctx(dir));
+    await piWriter.configure(ctx(dir));
+    expect(fs.readFileSync(authBackup, "utf8")).not.toContain(KEY);
+
+    await piWriter.uninstall({ kind: "user", dir });
+
+    expect(fs.readFileSync(authBackup, "utf8")).not.toContain(KEY);
+    expect(JSON.parse(fs.readFileSync(authBackup, "utf8"))).toEqual({});
+  });
+
   it("removes only Haimaker-owned entries", async () => {
     const dir = tmp();
     fs.mkdirSync(agentDir(dir), { recursive: true });
@@ -254,6 +397,24 @@ describe("piWriter uninstall", () => {
     });
   });
 
+  it("preserves an unrecognized default selected under the Haimaker provider", async () => {
+    const dir = tmp();
+    fs.mkdirSync(agentDir(dir), { recursive: true });
+    fs.writeFileSync(
+      path.join(agentDir(dir), "settings.json"),
+      JSON.stringify({ defaultProvider: "haimaker", defaultModel: "user-managed-model" })
+    );
+
+    await piWriter.configure(ctx(dir));
+    expect(readConfig(dir, "settings.json").defaultModel).toBe("user-managed-model");
+    await piWriter.uninstall({ kind: "user", dir });
+
+    expect(readConfig(dir, "settings.json")).toEqual({
+      defaultProvider: "haimaker",
+      defaultModel: "user-managed-model",
+    });
+  });
+
   it("is a no-op when Pi's files are absent", async () => {
     const dir = tmp();
     await piWriter.uninstall({ kind: "user", dir });
@@ -282,5 +443,6 @@ describe("piWriter verify", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("https://api.haimaker.ai/v1/chat/completions");
     expect(calls[0].init.headers.Authorization).toBe(`Bearer ${KEY}`);
+    expect(JSON.parse(calls[0].init.body).model).toBe("auto");
   });
 });

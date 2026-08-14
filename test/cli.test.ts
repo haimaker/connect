@@ -223,7 +223,7 @@ describe("cli run() — guardrails", () => {
     expect(auth.haimaker).toEqual({ type: "api_key", key: KEY });
     expect(settings).toMatchObject({
       defaultProvider: "haimaker",
-      defaultModel: "haimaker/auto",
+      defaultModel: "auto",
     });
     expect(cap.lines.join("\n")).not.toContain(KEY);
   });

@@ -12,10 +12,10 @@ no background daemon. Haimaker serves OpenAI Chat Completions, OpenAI Responses,
 and Anthropic Messages directly, so the agent just points at it. One key gets you
 200+ frontier and open-source models through a single OpenAI-compatible endpoint.
 
-It's a small, pure-TypeScript CLI that leans on Node's built-ins. Its only
-runtime dependencies are a TOML and a YAML parser, lazy-loaded just for the Codex
-and Hermes writers. It runs on macOS, Linux, and Windows on Node 18 or newer, and
-sends no telemetry.
+It's a small, pure-TypeScript CLI that leans on Node's built-ins. Its runtime
+dependencies are TOML and YAML parsers (lazy-loaded for Codex and Hermes) plus a
+small file-lock helper used to coordinate Pi credential writes. It runs on macOS,
+Linux, and Windows on Node 18 or newer, and sends no telemetry.
 
 ---
 
@@ -48,7 +48,7 @@ before exiting.
 | Codex | `--codex` | OpenAI Responses | Stable² |
 | Cline | `--cline` | OpenAI Chat | Stable (CLI)³ |
 | Kilo Code | `--kilo` | OpenAI Chat | Stable |
-| Pi | `--pi` | OpenAI Chat | Stable |
+| Pi | `--pi` | OpenAI Chat | Beta (source-validated) |
 
 The first seven integrations are verified end-to-end against real installs on
 macOS. Pi's config path and schema are validated against the coding-agent source;
@@ -168,7 +168,13 @@ npx @haimaker/connect --uninstall --claude
 
 Pi is configured through its native `~/.pi/agent/models.json`, `auth.json`, and
 `settings.json` files. The Haimaker API key stays in Pi's credential file rather
-than the model catalog.
+than the model catalog. Because Pi's auto-router needs one static model record,
+connect advertises conservative 32k context and 4k output limits while enabling
+reasoning and image input; per-route pricing cannot be represented, so Pi's local
+cost display remains zero. Pi accepts JSONC in `models.json`, but connect rewrites
+that file as plain JSON, so comments are not preserved. This integration targets
+the stock `pi` build; rebranded builds with a different app name or config
+directory are not auto-detected.
 
 ### Codex and the API key
 
