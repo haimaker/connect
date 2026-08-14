@@ -12,10 +12,10 @@ no background daemon. Haimaker serves OpenAI Chat Completions, OpenAI Responses,
 and Anthropic Messages directly, so the agent just points at it. One key gets you
 200+ frontier and open-source models through a single OpenAI-compatible endpoint.
 
-It's a small, pure-TypeScript CLI that leans on Node's built-ins. Its only
-runtime dependencies are a TOML and a YAML parser, lazy-loaded just for the Codex
-and Hermes writers. It runs on macOS, Linux, and Windows on Node 18 or newer, and
-sends no telemetry.
+It's a small, pure-TypeScript CLI that leans on Node's built-ins. Its runtime
+dependencies are TOML and YAML parsers (lazy-loaded for Codex and Hermes) plus a
+small file-lock helper used to coordinate Pi credential writes. It runs on macOS,
+Linux, and Windows on Node 18 or newer, and sends no telemetry.
 
 ---
 
@@ -48,9 +48,11 @@ before exiting.
 | Codex | `--codex` | OpenAI Responses | Stable² |
 | Cline | `--cline` | OpenAI Chat | Stable (CLI)³ |
 | Kilo Code | `--kilo` | OpenAI Chat | Stable |
+| Pi | `--pi` | OpenAI Chat | Stable |
 
-All seven are verified end-to-end against real installs on macOS (config path,
-schema, and a live round-trip through Haimaker).
+The first seven integrations are verified end-to-end against real installs on
+macOS. Pi's config path and schema are validated against the coding-agent source;
+all writers are also covered by isolated writer and CLI tests.
 
 ¹ Hermes is wired up through config alone (no Python plugin). It registers a
 `haimaker` custom provider in `~/.hermes/config.yaml` and writes the key to
@@ -109,8 +111,9 @@ The key is never printed in logs, echoed commands, or error messages.
 
 ### Key handling
 
-Most agents (Claude Code, opencode, Kilo, OpenClaw, Cline) store the key in
-their own `0600` config — they work immediately, no environment variable needed.
+Most agents (Claude Code, opencode, Kilo, OpenClaw, Cline, Pi) store the key in
+their own `0600` config or credential file — they work immediately, no
+environment variable needed.
 **Codex** is the exception: it reads `HAIMAKER_API_KEY` from your shell at
 runtime. `--key-mode` controls how that's provided (interactive runs prompt for
 it; the default is the safe option):
@@ -139,6 +142,9 @@ npx @haimaker/connect --opencode --pick-model
 # Configure Codex (then export HAIMAKER_API_KEY in your shell)
 npx @haimaker/connect --codex
 
+# Configure Pi through ~/.pi/agent/models.json and auth.json
+npx @haimaker/connect --pi
+
 # Remove the config we added from Claude Code
 npx @haimaker/connect --uninstall --claude
 ```
@@ -159,6 +165,16 @@ npx @haimaker/connect --uninstall --claude
 - It verifies. After writing, `connect` sends one minimal request on the agent's
   actual protocol surface and reports pass or fail (skip with `--no-verify`). On
   failure your config is left in place, with an error that says what to fix.
+
+Pi is configured through its native `~/.pi/agent/models.json`, `auth.json`, and
+`settings.json` files. The Haimaker API key stays in Pi's credential file rather
+than the model catalog. Because Pi's auto-router needs one static model record,
+connect advertises conservative 32k context and 4k output limits while enabling
+reasoning and image input; per-route pricing cannot be represented, so Pi's local
+cost display remains zero. Pi accepts JSONC in `models.json`, but connect rewrites
+that file as plain JSON, so comments are not preserved. This integration targets
+the stock `pi` build; rebranded builds with a different app name or config
+directory are not auto-detected.
 
 ### Codex and the API key
 

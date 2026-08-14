@@ -41,8 +41,8 @@ export type Scope = {
  *              the agent supports it (Hermes api_key in config.yaml). The most
  *              convenient and the most dangerous (secret in a plaintext config).
  *
- * Note: five agents (Claude/opencode/Kilo/OpenClaw/Cline) only support an inline
- * key in their own 0600 config, so they store it there regardless of this mode.
+ * Note: six agents (Claude/opencode/Kilo/OpenClaw/Cline/Pi) store a key in their
+ * own 0600 config or credential file regardless of this mode.
  */
 export type KeyMode = "env" | "profile" | "inline";
 

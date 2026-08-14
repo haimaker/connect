@@ -208,6 +208,26 @@ describe("cli run() — guardrails", () => {
     expect(cap.lines.join("\n")).not.toContain(KEY);
   });
 
+  it("--pi writes Pi's provider, credential, and settings files", async () => {
+    const dir = tmp();
+    const cap = captureErr();
+    const code = await run(["--pi", "--dir", dir, "--api-key", KEY, "--no-verify"]);
+    cap.restore();
+
+    expect(code).toBe(0);
+    const piDir = path.join(dir, ".pi", "agent");
+    const models = JSON.parse(fs.readFileSync(path.join(piDir, "models.json"), "utf8"));
+    const auth = JSON.parse(fs.readFileSync(path.join(piDir, "auth.json"), "utf8"));
+    const settings = JSON.parse(fs.readFileSync(path.join(piDir, "settings.json"), "utf8"));
+    expect(models.providers.haimaker.api).toBe("openai-completions");
+    expect(auth.haimaker).toEqual({ type: "api_key", key: KEY });
+    expect(settings).toMatchObject({
+      defaultProvider: "haimaker",
+      defaultModel: "auto",
+    });
+    expect(cap.lines.join("\n")).not.toContain(KEY);
+  });
+
   it("rejects --uninstall --project for a user-only writer (no global mutation)", async () => {
     const dir = tmp();
     // Pre-seed a real global-style claude config under the dir.

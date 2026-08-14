@@ -23,6 +23,7 @@ const AGENT_FLAGS: Record<string, string> = {
   "--codex": "codex",
   "--hermes": "hermes",
   "--cline": "cline",
+  "--pi": "pi",
 };
 
 interface ParsedArgs {
@@ -151,6 +152,7 @@ Agent flags (select one or more):
   --cline        Cline CLI          (~/.cline/data/settings/providers.json)
   --kilo         Kilo Code          (~/.config/kilo/kilo.jsonc)
   --openclaw     OpenClaw           (~/.openclaw/openclaw.json)
+  --pi           Pi                 (~/.pi/agent/models.json + auth.json)
 
 Options:
   --project              Write project-local config under the current repo and
