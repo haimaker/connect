@@ -48,9 +48,11 @@ before exiting.
 | Codex | `--codex` | OpenAI Responses | Stable² |
 | Cline | `--cline` | OpenAI Chat | Stable (CLI)³ |
 | Kilo Code | `--kilo` | OpenAI Chat | Stable |
+| Pi | `--pi` | OpenAI Chat | Stable |
 
-All seven are verified end-to-end against real installs on macOS (config path,
-schema, and a live round-trip through Haimaker).
+The first seven integrations are verified end-to-end against real installs on
+macOS. Pi's config path and schema are validated against the coding-agent source;
+all writers are also covered by isolated writer and CLI tests.
 
 ¹ Hermes is wired up through config alone (no Python plugin). It registers a
 `haimaker` custom provider in `~/.hermes/config.yaml` and writes the key to
@@ -109,8 +111,9 @@ The key is never printed in logs, echoed commands, or error messages.
 
 ### Key handling
 
-Most agents (Claude Code, opencode, Kilo, OpenClaw, Cline) store the key in
-their own `0600` config — they work immediately, no environment variable needed.
+Most agents (Claude Code, opencode, Kilo, OpenClaw, Cline, Pi) store the key in
+their own `0600` config or credential file — they work immediately, no
+environment variable needed.
 **Codex** is the exception: it reads `HAIMAKER_API_KEY` from your shell at
 runtime. `--key-mode` controls how that's provided (interactive runs prompt for
 it; the default is the safe option):
@@ -139,6 +142,9 @@ npx @haimaker/connect --opencode --pick-model
 # Configure Codex (then export HAIMAKER_API_KEY in your shell)
 npx @haimaker/connect --codex
 
+# Configure Pi through ~/.pi/agent/models.json and auth.json
+npx @haimaker/connect --pi
+
 # Remove the config we added from Claude Code
 npx @haimaker/connect --uninstall --claude
 ```
@@ -159,6 +165,10 @@ npx @haimaker/connect --uninstall --claude
 - It verifies. After writing, `connect` sends one minimal request on the agent's
   actual protocol surface and reports pass or fail (skip with `--no-verify`). On
   failure your config is left in place, with an error that says what to fix.
+
+Pi is configured through its native `~/.pi/agent/models.json`, `auth.json`, and
+`settings.json` files. The Haimaker API key stays in Pi's credential file rather
+than the model catalog.
 
 ### Codex and the API key
 

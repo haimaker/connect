@@ -9,6 +9,7 @@ import { codexWriter } from "./codex";
 import { clineWriter } from "./cline";
 import { kiloCodeWriter } from "./kilo-code";
 import { openclawWriter } from "./openclaw";
+import { piWriter } from "./pi";
 
 /** All writers in display/priority order. */
 export const ALL_WRITERS: AgentWriter[] = [
@@ -19,6 +20,7 @@ export const ALL_WRITERS: AgentWriter[] = [
   clineWriter,
   kiloCodeWriter,
   openclawWriter,
+  piWriter,
 ];
 
 /** Look up a writer by its stable id (e.g. "claude-code"). */

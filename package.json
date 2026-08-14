@@ -23,6 +23,7 @@
     "opencode",
     "cline",
     "hermes",
+    "pi",
     "inference"
   ],
   "type": "commonjs",
