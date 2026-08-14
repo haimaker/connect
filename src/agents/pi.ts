@@ -17,6 +17,15 @@ import { deleteDeep, setDeep } from "../fs/managed-block";
 
 const PROVIDER_ID = "haimaker";
 
+function assertJsonObject(value: unknown, fileName: string): asserts value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(
+      `Pi ${fileName} must contain a JSON object. The invalid file was not modified; ` +
+        `fix it or restore it from its .haimaker.bak backup.`
+    );
+  }
+}
+
 function agentDir(scope: Scope): string {
   if (!scope.dir) {
     const configured = process.env.PI_CODING_AGENT_DIR;
@@ -24,6 +33,11 @@ function agentDir(scope: Scope): string {
       if (configured === "~") return homeRoot(scope);
       if (configured.startsWith("~/") || configured.startsWith("~\\")) {
         return path.join(homeRoot(scope), configured.slice(2));
+      }
+      if (!path.isAbsolute(configured)) {
+        throw new Error(
+          `PI_CODING_AGENT_DIR must be an absolute path or start with ~/ (got ${JSON.stringify(configured)}).`
+        );
       }
       return configured;
     }
@@ -64,6 +78,10 @@ export const piWriter: AgentWriter = {
     await editJsonConfig(
       this.configPath(ctx.scope),
       (config) => {
+        assertJsonObject(config, "models.json");
+        if (config.providers !== undefined) {
+          assertJsonObject(config.providers, 'models.json "providers"');
+        }
         setDeep(config, ["providers", PROVIDER_ID], {
           name: "Haimaker",
           baseUrl: baseUrlForSurface(ctx.host, this.surface),
@@ -82,6 +100,7 @@ export const piWriter: AgentWriter = {
     await editJsonConfig(
       authPath(ctx.scope),
       (auth) => {
+        assertJsonObject(auth, "auth.json");
         setDeep(auth, [PROVIDER_ID], { type: "api_key", key: escapedApiKey });
       },
       { backup: true, createIfMissing: true }
@@ -90,6 +109,7 @@ export const piWriter: AgentWriter = {
     await editJsonConfig(
       settingsPath(ctx.scope),
       (settings) => {
+        assertJsonObject(settings, "settings.json");
         // Do not replace a user's selected provider/model. Once the default is
         // ours, a later connect run may update it to the newly selected model.
         const ownsDefault =

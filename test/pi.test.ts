@@ -70,6 +70,14 @@ describe("piWriter metadata and detection", () => {
       path.join(dir, ".pi", "agent", "models.json")
     );
   });
+
+  it("rejects a relative PI_CODING_AGENT_DIR instead of writing relative to cwd", () => {
+    vi.stubEnv("PI_CODING_AGENT_DIR", "relative-agent-dir");
+
+    expect(() => piWriter.configPath({ kind: "user" })).toThrow(
+      /PI_CODING_AGENT_DIR must be an absolute path/i
+    );
+  });
 });
 
 describe("piWriter configure", () => {
@@ -103,6 +111,36 @@ describe("piWriter configure", () => {
     for (const name of ["models.json", "auth.json", "settings.json"]) {
       expect(fs.statSync(path.join(agentDir(dir), name)).mode & 0o777).toBe(0o600);
     }
+  });
+
+  it("tightens pre-existing files from 0644 to 0600", async () => {
+    const dir = tmp();
+    fs.mkdirSync(agentDir(dir), { recursive: true });
+    for (const name of ["models.json", "auth.json", "settings.json"]) {
+      const file = path.join(agentDir(dir), name);
+      fs.writeFileSync(file, "{}\n");
+      fs.chmodSync(file, 0o644);
+    }
+
+    await piWriter.configure(ctx(dir));
+
+    for (const name of ["models.json", "auth.json", "settings.json"]) {
+      expect(fs.statSync(path.join(agentDir(dir), name)).mode & 0o777).toBe(0o600);
+    }
+  });
+
+  it("fails clearly and preserves a malformed providers value", async () => {
+    const dir = tmp();
+    fs.mkdirSync(agentDir(dir), { recursive: true });
+    const modelsPath = path.join(agentDir(dir), "models.json");
+    const original = JSON.stringify({ providers: "invalid", keep: true });
+    fs.writeFileSync(modelsPath, original);
+
+    await expect(piWriter.configure(ctx(dir))).rejects.toThrow(
+      /models\.json "providers" must contain a JSON object/i
+    );
+    expect(fs.readFileSync(modelsPath, "utf8")).toBe(original);
+    expect(fs.readFileSync(`${modelsPath}.haimaker.bak`, "utf8")).toBe(original);
   });
 
   it("uses the selected upstream model id and normalizes the base URL", async () => {
