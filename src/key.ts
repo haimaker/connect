@@ -1,13 +1,27 @@
 import * as readline from "readline";
 import { KEYS_URL } from "./endpoint";
+import {
+  deviceLogin,
+  DeviceDeniedError,
+  DeviceExpiredError,
+  DeviceLoginDeps,
+  DeviceLoginUnavailableError,
+  DeviceTokenSuccess,
+} from "./device";
+
+export interface ResolvedApiKey {
+  apiKey: string;
+  login?: DeviceTokenSuccess;
+}
 
 /**
  * Resolve the haimaker API key.
  *
  * Resolution order:
  *   1. opts.flag (e.g. from --api-key)
- *   2. process.env.HAIMAKER_API_KEY
- *   3. hidden interactive prompt (only when opts.allowPrompt is true)
+ *   2. process.env.HAIMAKER_API_KEY (unless device login is forced)
+ *   3. device login (default on a TTY, or forced)
+ *   4. hidden interactive prompt (only when opts.allowPrompt is true)
  *
  * The key value is NEVER logged. Before prompting we print the "create a key"
  * hint (KEYS_URL) to stderr.
@@ -15,16 +29,39 @@ import { KEYS_URL } from "./endpoint";
 export async function resolveApiKey(opts: {
   flag?: string;
   allowPrompt: boolean;
-}): Promise<string> {
+  device?: {
+    host: string;
+    mode: "default" | "force" | "off";
+    deps?: DeviceLoginDeps;
+  };
+}): Promise<ResolvedApiKey> {
   const fromFlag = opts.flag && opts.flag.trim();
-  if (fromFlag) return fromFlag;
+  if (fromFlag) return { apiKey: fromFlag };
 
-  const fromEnv = process.env.HAIMAKER_API_KEY && process.env.HAIMAKER_API_KEY.trim();
-  if (fromEnv) return fromEnv;
+  if (opts.device?.mode !== "force") {
+    const fromEnv = process.env.HAIMAKER_API_KEY && process.env.HAIMAKER_API_KEY.trim();
+    if (fromEnv) return { apiKey: fromEnv };
+  }
+
+  const shouldUseDevice =
+    opts.device &&
+    opts.device.mode !== "off" &&
+    (opts.device.mode === "force" || process.stdin.isTTY);
+  if (shouldUseDevice) {
+    try {
+      const login = await deviceLogin(opts.device!.host, opts.device!.deps);
+      return { apiKey: login.apiKey, login };
+    } catch (err) {
+      if (err instanceof DeviceDeniedError || err instanceof DeviceExpiredError) throw err;
+      if (!(err instanceof DeviceLoginUnavailableError)) throw err;
+      console.error("Device login is unavailable; paste an API key instead.");
+    }
+  }
 
   if (!opts.allowPrompt) {
     throw new Error(
-      `No API key provided. Pass --api-key, set HAIMAKER_API_KEY, or create one at ${KEYS_URL}`
+      "No API key provided. Run again on a machine with a browser (device login), " +
+        "pass --api-key, or set HAIMAKER_API_KEY."
     );
   }
 
@@ -34,7 +71,7 @@ export async function resolveApiKey(opts: {
   if (!trimmed) {
     throw new Error("No API key entered.");
   }
-  return trimmed;
+  return { apiKey: trimmed };
 }
 
 // Control characters the hidden prompt reacts to (built without embedding raw

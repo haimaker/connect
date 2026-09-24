@@ -21,7 +21,7 @@ interface ModelsResponse {
  * an oversized Content-Length, then streams with a running cap. Falls back to
  * res.json() when the body isn't a stream (e.g. an injected mock in tests).
  */
-async function readJsonCapped(res: Response, maxBytes: number): Promise<ModelsResponse> {
+export async function readJsonCapped<T>(res: Response, maxBytes: number): Promise<T> {
   const lenHeader =
     res.headers && typeof res.headers.get === "function"
       ? res.headers.get("content-length")
@@ -32,7 +32,7 @@ async function readJsonCapped(res: Response, maxBytes: number): Promise<ModelsRe
 
   const body = (res as unknown as { body?: ReadableStream<Uint8Array> }).body;
   if (!body || typeof body.getReader !== "function") {
-    return (await res.json()) as ModelsResponse;
+    return (await res.json()) as T;
   }
 
   const reader = body.getReader();
@@ -49,7 +49,7 @@ async function readJsonCapped(res: Response, maxBytes: number): Promise<ModelsRe
     }
     chunks.push(value);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as ModelsResponse;
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as T;
 }
 
 /**
@@ -113,7 +113,7 @@ export async function fetchModels(
     throw new Error(`Failed to fetch models: HTTP ${res.status}`);
   }
 
-  const body = await readJsonCapped(res, MAX_RESPONSE_BYTES);
+  const body = await readJsonCapped<ModelsResponse>(res, MAX_RESPONSE_BYTES);
   const rows = Array.isArray(body?.data) ? body.data.slice(0, MAX_MODELS) : [];
 
   const deduped: string[] = [];

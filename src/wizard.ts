@@ -7,6 +7,7 @@
 import { ALL_WRITERS, detectInstalled } from "./agents/index";
 import { AgentWriter, InstallCtx, Scope, KeyMode } from "./agents/types";
 import { resolveApiKey } from "./key";
+import { DeviceLoginDeps, DeviceTokenSuccess, printDeviceLoginSummary } from "./device";
 import { ask, pickModelInteractive, promptKeyMode } from "./prompt";
 import { applyAll } from "./apply";
 
@@ -16,6 +17,11 @@ export interface WizardOpts {
   model: string;
   verify: boolean;
   apiKeyFlag?: string;
+  device: {
+    host: string;
+    mode: "default" | "force" | "off";
+    deps?: DeviceLoginDeps;
+  };
   pickModel?: boolean;
   /** Explicit --key-mode from the CLI; when undefined the wizard prompts if relevant. */
   keyMode?: KeyMode;
@@ -83,8 +89,15 @@ export async function runWizard(opts: WizardOpts): Promise<number> {
 
   // 2. Resolve the API key (hidden prompt allowed here).
   let apiKey: string;
+  let login: DeviceTokenSuccess | undefined;
   try {
-    apiKey = await resolveApiKey({ flag: opts.apiKeyFlag, allowPrompt: true });
+    const resolved = await resolveApiKey({
+      flag: opts.apiKeyFlag,
+      allowPrompt: true,
+      device: opts.device,
+    });
+    apiKey = resolved.apiKey;
+    login = resolved.login;
   } catch (err) {
     console.error(`✗ ${(err as Error).message}`);
     return 1;
@@ -112,7 +125,14 @@ export async function runWizard(opts: WizardOpts): Promise<number> {
     verify: opts.verify,
     keyMode,
   };
-  const { configFailures, verifyFailures } = await applyAll(chosen, ctx);
+  const { configFailures, verifyFailures, insufficientCredits } = await applyAll(chosen, ctx);
+
+  if (login) {
+    printDeviceLoginSummary(login);
+    if (insufficientCredits && login.billingUrl) {
+      console.error(`Add funds at ${login.billingUrl}`);
+    }
+  }
 
   // 5. Summary.
   console.error("");
