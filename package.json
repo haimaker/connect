@@ -57,6 +57,6 @@
     "@types/proper-lockfile": "4.1.4",
     "typescript": "^5.6.3",
     "vite": "^6.4.3",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.11"
   }
 }
