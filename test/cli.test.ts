@@ -15,6 +15,7 @@ function tmp(): string {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   while (dirs.length) cleanup(dirs.pop()!);
 });
 
@@ -24,7 +25,39 @@ function captureErr(): { lines: string[]; restore: () => void } {
   const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
     lines.push(args.map(String).join(" "));
   });
-  return { lines, restore: () => spy.mockRestore() };
+  const writeSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: any) => {
+    lines.push(String(chunk));
+    return true;
+  });
+  return {
+    lines,
+    restore: () => {
+      spy.mockRestore();
+      writeSpy.mockRestore();
+    },
+  };
+}
+
+function deviceFetch(...steps: Array<{ status: number; body: unknown }>) {
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const impl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init: init ?? {} });
+    const step = steps.shift();
+    if (!step) throw new Error("unexpected fetch");
+    return {
+      ok: step.status >= 200 && step.status < 300,
+      status: step.status,
+      json: async () => step.body,
+    } as unknown as Response;
+  }) as unknown as typeof fetch;
+  return { impl, calls };
+}
+
+function setStdinTTY(isTTY: boolean): () => void {
+  Object.defineProperty(process.stdin, "isTTY", { value: isTTY, configurable: true });
+  return () => {
+    delete (process.stdin as NodeJS.ReadStream & { isTTY?: boolean }).isTTY;
+  };
 }
 
 describe("cli run() — dispatch", () => {
@@ -302,5 +335,191 @@ describe("cli run() — key modes", () => {
     await run(["--uninstall", "--codex", "--dir", dir]);
     cap.restore();
     expect(fs.readFileSync(path.join(dir, ".zshrc"), "utf8")).not.toContain("HAIMAKER_API_KEY");
+  });
+});
+
+describe("cli run() — device login", () => {
+  let savedApiKey: string | undefined;
+  let savedCi: string | undefined;
+
+  beforeEach(() => {
+    savedApiKey = process.env.HAIMAKER_API_KEY;
+    savedCi = process.env.CI;
+    delete process.env.HAIMAKER_API_KEY;
+    process.env.CI = "1";
+  });
+
+  afterEach(() => {
+    if (savedApiKey === undefined) delete process.env.HAIMAKER_API_KEY;
+    else process.env.HAIMAKER_API_KEY = savedApiKey;
+    if (savedCi === undefined) delete process.env.CI;
+    else process.env.CI = savedCi;
+  });
+
+  it("--login ignores HAIMAKER_API_KEY and prints balance plus the x402 pointer", async () => {
+    process.env.HAIMAKER_API_KEY = "sk-env-key";
+    const deviceKey = "sk-device-key";
+    const deviceCode = "device-secret";
+    const { impl, calls } = deviceFetch(
+      {
+        status: 200,
+        body: {
+          device_code: deviceCode,
+          user_code: "ABCD-EFGH",
+          verification_uri: "https://app.example.com/device",
+          verification_uri_complete: "https://app.example.com/device?user_code=ABCD-EFGH",
+          expires_in: 900,
+          interval: 0,
+        },
+      },
+      {
+        status: 200,
+        body: {
+          api_key: deviceKey,
+          team_id: "team-1",
+          balance_usd: 7.5,
+          billing_url: "https://app.example.com/billing",
+          topup: {
+            x402_url: "https://api.example.com/payments/x402/topup",
+            min_usd: 5,
+            network: "eip155:8453",
+            asset: "USDC",
+          },
+        },
+      }
+    );
+    vi.stubGlobal("fetch", impl);
+    const dir = tmp();
+    const cap = captureErr();
+
+    const exitCode = await run(["--claude", "--dir", dir, "--login", "--no-verify"]);
+    cap.restore();
+
+    expect(exitCode).toBe(0);
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://api.haimaker.ai/v1/device/code",
+      "https://api.haimaker.ai/v1/device/token",
+    ]);
+    const config = JSON.parse(fs.readFileSync(path.join(dir, ".claude", "settings.json"), "utf8"));
+    expect(config.env.ANTHROPIC_AUTH_TOKEN).toBe(deviceKey);
+    const output = cap.lines.join("\n");
+    expect(output).toContain("Balance: $7.50. Your agent can fund itself with USDC over x402:");
+    expect(output).toContain("POST https://api.example.com/payments/x402/topup  (team team-1, min $5)");
+    expect(output).toContain("Guide: https://haimaker.ai/agents");
+    expect(output).not.toContain(deviceCode);
+    expect(output).not.toContain(deviceKey);
+  });
+
+  it("--no-login restores the hidden paste prompt and never starts device login", async () => {
+    const restoreTty = setStdinTTY(true);
+    const input = process.stdin as NodeJS.ReadStream & { setRawMode?: (mode: boolean) => void };
+    Object.defineProperty(input, "setRawMode", { value: vi.fn(), configurable: true });
+    vi.spyOn(input, "resume").mockImplementation(() => input);
+    vi.spyOn(input, "pause").mockImplementation(() => input);
+    vi.spyOn(input, "setEncoding").mockImplementation(() => input);
+    const { impl, calls } = deviceFetch();
+    vi.stubGlobal("fetch", impl);
+    const cap = captureErr();
+
+    const running = run(["--claude", "--dir", tmp(), "--no-login", "--no-verify"]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    input.emit("data", `${KEY}\n`);
+    const exitCode = await running;
+    cap.restore();
+    restoreTty();
+    delete input.setRawMode;
+
+    expect(exitCode).toBe(0);
+    expect(calls).toHaveLength(0);
+    expect(cap.lines.join("\n")).toContain("Paste your haimaker API key:");
+    expect(cap.lines.join("\n")).not.toContain(KEY);
+  });
+
+  it("rejects --login together with --no-login", async () => {
+    const cap = captureErr();
+    const exitCode = await run(["--claude", "--login", "--no-login"]);
+    cap.restore();
+    expect(exitCode).toBe(1);
+    expect(cap.lines.join("\n")).toContain("cannot be used together");
+  });
+
+  it("fails fast without a key on non-TTY stdin and never polls", async () => {
+    const restoreTty = setStdinTTY(false);
+    const { impl, calls } = deviceFetch();
+    vi.stubGlobal("fetch", impl);
+    const cap = captureErr();
+    const exitCode = await run(["--claude", "--dir", tmp(), "--no-verify"]);
+    cap.restore();
+    restoreTty();
+
+    expect(exitCode).toBe(1);
+    expect(cap.lines.join("\n")).toContain("HAIMAKER_API_KEY");
+    expect(cap.lines.join("\n")).toContain("--login");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("uses HAIMAKER_API_KEY without any device calls", async () => {
+    process.env.HAIMAKER_API_KEY = KEY;
+    const { impl, calls } = deviceFetch();
+    vi.stubGlobal("fetch", impl);
+    const cap = captureErr();
+    const exitCode = await run(["--claude", "--dir", tmp(), "--no-verify"]);
+    cap.restore();
+    expect(exitCode).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("returns 1 after denial and does not fall back to the paste prompt", async () => {
+    const { impl } = deviceFetch(
+      {
+        status: 200,
+        body: {
+          device_code: "device-secret",
+          user_code: "ABCD-EFGH",
+          verification_uri: "https://app.example.com/device",
+          verification_uri_complete: "https://app.example.com/device?user_code=ABCD-EFGH",
+          expires_in: 900,
+          interval: 0,
+        },
+      },
+      { status: 400, body: { error: "access_denied" } }
+    );
+    vi.stubGlobal("fetch", impl);
+    const cap = captureErr();
+    const exitCode = await run(["--claude", "--dir", tmp(), "--login", "--no-verify"]);
+    cap.restore();
+
+    expect(exitCode).toBe(1);
+    expect(cap.lines.join("\n")).toContain("Authorization was denied in the browser.");
+    expect(cap.lines.join("\n")).not.toContain("Paste your haimaker API key:");
+  });
+
+  it("prints the device billing URL when verification fails with HTTP 402", async () => {
+    const billingUrl = "https://app.example.com/billing";
+    const { impl } = deviceFetch(
+      {
+        status: 200,
+        body: {
+          device_code: "device-secret",
+          user_code: "ABCD-EFGH",
+          verification_uri: "https://app.example.com/device",
+          verification_uri_complete: "https://app.example.com/device?user_code=ABCD-EFGH",
+          expires_in: 900,
+          interval: 0,
+        },
+      },
+      {
+        status: 200,
+        body: { api_key: "sk-device-key", balance_usd: 0, billing_url: billingUrl },
+      },
+      { status: 402, body: { error: "insufficient credits" } }
+    );
+    vi.stubGlobal("fetch", impl);
+    const cap = captureErr();
+    const exitCode = await run(["--claude", "--dir", tmp(), "--login"]);
+    cap.restore();
+
+    expect(exitCode).toBe(2);
+    expect(cap.lines.join("\n")).toContain(`Add funds at ${billingUrl}`);
   });
 });

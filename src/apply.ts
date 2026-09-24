@@ -21,7 +21,7 @@ import { ensureProfileExport, shellProfilePath } from "./fs/shell-profile";
 export async function applyAll(
   writers: AgentWriter[],
   ctx: InstallCtx
-): Promise<{ configFailures: number; verifyFailures: number }> {
+): Promise<{ configFailures: number; verifyFailures: number; insufficientCredits: boolean }> {
   // Phase 1 — configure serially.
   const configured: AgentWriter[] = [];
   let configFailures = 0;
@@ -39,7 +39,9 @@ export async function applyAll(
   await maybeWriteShellExport(configured, ctx);
 
   const toVerify = ctx.verify ? configured : [];
-  if (toVerify.length === 0) return { configFailures, verifyFailures: 0 };
+  if (toVerify.length === 0) {
+    return { configFailures, verifyFailures: 0, insufficientCredits: false };
+  }
 
   // Phase 2 — verify concurrently (Promise.all preserves input/selection order).
   const results = await Promise.all(
@@ -56,11 +58,13 @@ export async function applyAll(
 
   // Phase 3 — render in selection order.
   let verifyFailures = 0;
+  let insufficientCredits = false;
   for (const { writer, result } of results) {
     printVerifyResult(writer, result);
     if (!result.ok) verifyFailures++;
+    if (!result.ok && result.status === 402) insufficientCredits = true;
   }
-  return { configFailures, verifyFailures };
+  return { configFailures, verifyFailures, insufficientCredits };
 }
 
 /**

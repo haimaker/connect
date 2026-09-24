@@ -22,14 +22,18 @@ Linux, and Windows on Node 18 or newer, and sends no telemetry.
 ## Quick start
 
 ```bash
-# Interactive: auto-detect installed agents, pick which to configure, paste a key
+# Interactive: auto-detect agents, then approve the shown code in your browser
 npx -y @haimaker/connect
 
-# Or configure one agent non-interactively
+# For CI and other non-interactive environments, provide a key directly
 HAIMAKER_API_KEY=sk-... npx @haimaker/connect --claude
 ```
 
-You'll need a Haimaker API key; create one at https://app.haimaker.ai/api-keys.
+On an interactive terminal, connect opens Haimaker's device-login page and shows
+a short code. Approve the matching code in the browser and connect receives a
+one-time API key automatically. If device login is unavailable, it falls back to
+a hidden paste prompt; you can create or copy a key at
+https://app.haimaker.ai/api-keys.
 
 By default it configures the `haimaker/auto` model (an auto-router that picks a
 model per request) and runs one live request to confirm the connection works
@@ -79,8 +83,8 @@ npx -y @haimaker/connect [agent flags] [options]
 ```
 
 Run it with no agent flags to start the interactive wizard: it detects installed
-agents, asks which to configure, reads your key with a hidden prompt, then
-configures and verifies each one.
+agents, asks which to configure, obtains a key through device login, then
+configures and verifies each one. The hidden paste prompt is the fallback.
 
 ### Options
 
@@ -89,7 +93,9 @@ configures and verifies each one.
 | `--project` | Write project-local config in the current repo and add the key-bearing file to `.gitignore`. opencode only. |
 | `--model <id>` | Model to configure (default `haimaker/auto`). e.g. `openai/gpt-4o`, `deepseek/deepseek-v3`. |
 | `--pick-model` | Pick a model interactively from `GET /v1/models`. |
-| `--api-key <key>` | Pass the key inline. Discouraged: it lands in your shell history, so prefer `HAIMAKER_API_KEY` or the hidden prompt. |
+| `--api-key <key>` | Pass the key inline. Discouraged: it lands in your shell history, so prefer device login, `HAIMAKER_API_KEY`, or the hidden prompt. |
+| `--login` | Force browser device login, even when `HAIMAKER_API_KEY` is set. Useful for explicit non-interactive runs that can be approved elsewhere. |
+| `--no-login` | Disable device login and use the hidden paste prompt on an interactive terminal. |
 | `--key-mode <mode>` | How to provide your key to agents that read it from the environment (Codex). `env` (default), `profile`, or `inline` — see [Key handling](#key-handling). Interactive runs prompt for this. |
 | `--no-verify` | Skip the live verification request after writing config. |
 | `--uninstall` | Remove the haimaker config we added from the selected (or all detected) agents. |
@@ -104,8 +110,12 @@ configures and verifies each one.
 In order of precedence:
 
 1. `--api-key <key>` (discouraged; visible in shell history)
-2. `HAIMAKER_API_KEY` environment variable
-3. Hidden interactive prompt (input is never echoed)
+2. `HAIMAKER_API_KEY` environment variable (skipped with `--login`)
+3. Browser device login (default on a TTY, forced with `--login`)
+4. Hidden interactive paste prompt (input is never echoed; device-login fallback)
+
+Use `HAIMAKER_API_KEY` in CI. Non-interactive runs without a key fail fast unless
+`--login` explicitly requests a device flow that you will approve in a browser.
 
 The key is never printed in logs, echoed commands, or error messages.
 
@@ -132,6 +142,12 @@ config.
 ```bash
 # Configure Claude Code with a specific model
 HAIMAKER_API_KEY=sk-... npx @haimaker/connect --claude --model deepseek/deepseek-v3
+
+# Force a fresh browser login even if HAIMAKER_API_KEY is already set
+npx @haimaker/connect --claude --login
+
+# Skip browser login and paste an existing key at the hidden prompt
+npx @haimaker/connect --claude --no-login
 
 # Configure opencode for the current repo (writes ./opencode.json, gitignores it)
 npx @haimaker/connect --opencode --project
@@ -208,8 +224,8 @@ Hermes' default `auto` — but if you've deliberately selected a named provider,
 - The key only ever goes to an `https://` host. `http://` is refused unless you
   pass `--allow-insecure-host`.
 - Network calls time out instead of hanging.
-- No telemetry. The only requests it makes are listing models (`--pick-model`)
-  and the verify call.
+- No telemetry. Its requests are limited to device login, listing models
+  (`--pick-model`), and the verify call.
 
 ---
 

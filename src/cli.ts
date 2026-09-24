@@ -9,6 +9,7 @@ import { ALL_WRITERS, byId, detectInstalled } from "./agents/index";
 import { AgentWriter, InstallCtx, Scope, KeyMode } from "./agents/types";
 import { DEFAULT_HOST, DEFAULT_MODEL, KEYS_URL, API_KEY_ENV, validateHost } from "./endpoint";
 import { resolveApiKey } from "./key";
+import { DeviceTokenSuccess, printDeviceLoginSummary } from "./device";
 import { pickModelInteractive, promptKeyMode } from "./prompt";
 import { applyAll } from "./apply";
 import { removeProfileExport } from "./fs/shell-profile";
@@ -36,6 +37,8 @@ interface ParsedArgs {
   keyMode?: KeyMode;
   pickModel: boolean;
   apiKey?: string;
+  login: boolean;
+  noLogin: boolean;
   verify: boolean;
   uninstall: boolean;
   help: boolean;
@@ -50,6 +53,8 @@ function parseArgs(argv: string[]): ParsedArgs {
     project: false,
     allowInsecureHost: false,
     pickModel: false,
+    login: false,
+    noLogin: false,
     verify: true,
     uninstall: false,
     help: false,
@@ -103,6 +108,12 @@ function parseArgs(argv: string[]): ParsedArgs {
       case "--allow-insecure-host":
         out.allowInsecureHost = true;
         break;
+      case "--login":
+        out.login = true;
+        break;
+      case "--no-login":
+        out.noLogin = true;
+        break;
       case "--key-mode": {
         const v = takeValue(i);
         if (v !== undefined) {
@@ -133,6 +144,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         out.unknown.push(a);
     }
   }
+  if (out.login && out.noLogin) {
+    out.errors.push("--login and --no-login cannot be used together.");
+  }
   return out;
 }
 
@@ -161,7 +175,9 @@ Options:
   --model <id>           Model to configure (default: ${DEFAULT_MODEL}).
   --pick-model           Interactively pick a model from GET /v1/models.
   --api-key <key>        API key (DISCOURAGED — visible in shell history; prefer
-                         the HAIMAKER_API_KEY env var or the hidden prompt).
+                         device login, the HAIMAKER_API_KEY env var, or the hidden prompt).
+  --login                Force browser device login, ignoring HAIMAKER_API_KEY.
+  --no-login             Disable device login and use the hidden paste prompt.
   --key-mode <mode>      How to provide your key to agents that read it from the
                          environment (Codex). Interactive runs prompt for this.
                            env      reference an env var you set (default, safest)
@@ -312,6 +328,10 @@ export async function run(argv: string[]): Promise<number> {
       model: args.model ?? DEFAULT_MODEL,
       verify: args.verify,
       apiKeyFlag: args.apiKey,
+      device: {
+        host,
+        mode: args.login ? "force" : args.noLogin ? "off" : "default",
+      },
       pickModel: args.pickModel,
       keyMode: args.keyMode,
     });
@@ -341,13 +361,33 @@ export async function run(argv: string[]): Promise<number> {
     );
   }
 
+  if (
+    !process.stdin.isTTY &&
+    !args.login &&
+    !args.apiKey?.trim() &&
+    !process.env.HAIMAKER_API_KEY?.trim()
+  ) {
+    console.error(
+      `✗ No API key provided. Set ${API_KEY_ENV}, pass --api-key, or use --login ` +
+        "on a machine where you can approve the browser flow."
+    );
+    return 1;
+  }
+
   // Resolve the API key (also required to list models for --pick-model).
   let apiKey: string;
+  let login: DeviceTokenSuccess | undefined;
   try {
-    apiKey = await resolveApiKey({
+    const resolved = await resolveApiKey({
       flag: args.apiKey,
       allowPrompt: Boolean(process.stdin.isTTY),
+      device: {
+        host,
+        mode: args.login ? "force" : args.noLogin ? "off" : "default",
+      },
     });
+    apiKey = resolved.apiKey;
+    login = resolved.login;
   } catch (err) {
     console.error(`✗ ${(err as Error).message}`);
     return 1;
@@ -368,7 +408,14 @@ export async function run(argv: string[]): Promise<number> {
 
   // Configure + verify each selected agent.
   const ctx: InstallCtx = { scope, host, apiKey, model, verify: args.verify, keyMode };
-  const { configFailures, verifyFailures } = await applyAll(selected, ctx);
+  const { configFailures, verifyFailures, insufficientCredits } = await applyAll(selected, ctx);
+
+  if (login) {
+    printDeviceLoginSummary(login);
+    if (insufficientCredits && login.billingUrl) {
+      console.error(`Add funds at ${login.billingUrl}`);
+    }
+  }
 
   if (configFailures > 0) return 1;
   if (verifyFailures > 0) return 2;

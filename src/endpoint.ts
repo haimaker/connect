@@ -40,6 +40,9 @@ export const KEYS_URL = "https://app.haimaker.ai/api-keys";
 /** The environment variable env-var agents (Codex) read the key from. */
 export const API_KEY_ENV = "HAIMAKER_API_KEY";
 
+/** OAuth device-flow client id accepted by the haimaker API. */
+export const DEVICE_CLIENT_ID = "haimaker-connect";
+
 /**
  * Normalize a user-supplied host.
  * - trims surrounding whitespace
