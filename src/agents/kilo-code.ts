@@ -6,9 +6,9 @@ import {
   ownsModelValue,
   isHaimakerModel,
   haimakerModelRef,
-  haimakerModelLabel,
 } from "../endpoint";
 import { verifyForCtx } from "../verify";
+import { opencodeModels } from "./opencode";
 import { xdgConfigHome } from "./paths";
 import { dirExists } from "../fs/exists";
 import { editJsonConfig } from "../fs/json-config";
@@ -28,7 +28,7 @@ import { setDeep, deleteDeep } from "../fs/managed-block";
  *
  * We own a known set of keys and preserve everything else:
  *   - $schema             (only set if absent)
- *   - provider.haimaker   (fully owned: api + options + models)
+ *   - provider.haimaker   (fully owned: api + options + models from the catalog)
  *   - top-level "model"   (only owned when unset or already "haimaker/*")
  */
 
@@ -42,6 +42,7 @@ export const kiloCodeWriter: AgentWriter = {
   id: "kilo-code",
   displayName: "Kilo Code",
   surface: "chat",
+  registersCatalog: true,
   // Config path + schema verified end-to-end against a real install (Kilo 7.3.54
   // CLI on macOS): config at ${XDG_CONFIG_HOME:-~/.config}/kilo/kilo.jsonc,
   // `kilo config check` clean, live roll-call round-trips through Haimaker.
@@ -56,7 +57,7 @@ export const kiloCodeWriter: AgentWriter = {
 
   async configure(ctx: InstallCtx): Promise<void> {
     const baseURL = baseUrlForSurface(ctx.host, this.surface);
-    const { key, ref } = haimakerModelRef(ctx.model);
+    const { ref } = haimakerModelRef(ctx.model);
 
     await editJsonConfig(
       this.configPath(ctx.scope),
@@ -66,7 +67,7 @@ export const kiloCodeWriter: AgentWriter = {
           config.$schema = SCHEMA_URL;
         }
 
-        // provider.haimaker: fully owned, exposing exactly the selected model.
+        // provider.haimaker: fully owned, exposing the selected model + catalog.
         // `api: "openai-compatible"` is Kilo's OpenAI-compatible adapter.
         setDeep(config, ["provider", "haimaker"], {
           api: "openai-compatible",
@@ -74,12 +75,7 @@ export const kiloCodeWriter: AgentWriter = {
             apiKey: ctx.apiKey,
             baseURL,
           },
-          models: {
-            [key]: {
-              name: haimakerModelLabel(key),
-              tool_call: true,
-            },
-          },
+          models: opencodeModels(ctx.model, ctx.catalog, { tool_call: true }),
         });
 
         // top-level "model": own it only when unset, or already a haimaker/*

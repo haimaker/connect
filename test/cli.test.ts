@@ -13,6 +13,14 @@ function tmp(): string {
   return d;
 }
 
+// No test may reach the real API. Tests that need responses stub fetch themselves;
+// everything else (e.g. the model-catalog fetch) fails fast and falls back.
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn(async () => {
+    throw new Error("network disabled in tests");
+  }));
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -521,5 +529,89 @@ describe("cli run() — device login", () => {
 
     expect(exitCode).toBe(2);
     expect(cap.lines.join("\n")).toContain(`Add funds at ${billingUrl}`);
+  });
+});
+
+describe("cli run() — model catalog", () => {
+  function catalogFetch(status = 200) {
+    const urls: string[] = [];
+    const impl = vi.fn(async (url: string | URL | Request) => {
+      urls.push(String(url));
+      return {
+        ok: status === 200,
+        status,
+        json: async () => ({
+          data: [
+            { id: "*" },
+            { id: "openai/gpt-5", max_input_tokens: 400000, max_output_tokens: 128000 },
+            { id: "deepseek/deepseek-v4-flash" },
+            { id: "openai/text-embedding-3-small" },
+          ],
+        }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    return { impl, urls };
+  }
+
+  it("registers every chat model from /v1/models for list-keeping agents", async () => {
+    const dir = tmp();
+    const { impl, urls } = catalogFetch();
+    vi.stubGlobal("fetch", impl);
+    const cap = captureErr();
+    const code = await run(["--opencode", "--dir", dir, "--api-key", KEY, "--no-verify"]);
+    cap.restore();
+
+    expect(code).toBe(0);
+    expect(urls).toEqual(["https://api.haimaker.ai/v1/models"]);
+    const cfg = JSON.parse(fs.readFileSync(path.join(dir, ".config", "opencode", "opencode.json"), "utf8"));
+    expect(Object.keys(cfg.provider.haimaker.models)).toEqual([
+      "auto",
+      "deepseek/deepseek-v4-flash",
+      "openai/gpt-5",
+    ]);
+    expect(cfg.model).toBe("haimaker/auto");
+  });
+
+  it("--single-model skips the catalog", async () => {
+    const dir = tmp();
+    const { impl, urls } = catalogFetch();
+    vi.stubGlobal("fetch", impl);
+    const cap = captureErr();
+    const code = await run(["--opencode", "--dir", dir, "--api-key", KEY, "--no-verify", "--single-model"]);
+    cap.restore();
+
+    expect(code).toBe(0);
+    expect(urls).toEqual([]);
+    const cfg = JSON.parse(fs.readFileSync(path.join(dir, ".config", "opencode", "opencode.json"), "utf8"));
+    expect(Object.keys(cfg.provider.haimaker.models)).toEqual(["auto"]);
+  });
+
+  it("does not fetch the catalog for agents that discover models themselves", async () => {
+    const dir = tmp();
+    const { impl, urls } = catalogFetch();
+    vi.stubGlobal("fetch", impl);
+    const cap = captureErr();
+    const code = await run(["--claude", "--dir", dir, "--api-key", KEY, "--no-verify"]);
+    cap.restore();
+
+    expect(code).toBe(0);
+    expect(urls).toEqual([]);
+  });
+
+  it("falls back to the selected model when /v1/models fails", async () => {
+    const dir = tmp();
+    const { impl } = catalogFetch(503);
+    vi.stubGlobal("fetch", impl);
+    const cap = captureErr();
+    const code = await run([
+      "--kilo", "--dir", dir, "--api-key", KEY, "--no-verify", "--model", "openai/gpt-5",
+    ]);
+    cap.restore();
+
+    expect(code).toBe(0);
+    expect(cap.lines.join("\n")).toMatch(/Could not fetch the model list/);
+    const cfg = JSON.parse(fs.readFileSync(path.join(dir, ".config", "kilo", "kilo.jsonc"), "utf8"));
+    expect(Object.keys(cfg.provider.haimaker.models)).toEqual(["openai/gpt-5"]);
+    expect(cfg.model).toBe("haimaker/openai/gpt-5");
   });
 });

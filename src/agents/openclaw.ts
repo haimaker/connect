@@ -9,6 +9,7 @@ import {
   haimakerModelLabel,
 } from "../endpoint";
 import { verifyForCtx } from "../verify";
+import { modelsToRegister } from "../models";
 import { homeRoot } from "./paths";
 import { dirExists } from "../fs/exists";
 import { editJsonConfig } from "../fs/json-config";
@@ -27,18 +28,23 @@ import { setDeep, deleteDeep } from "../fs/managed-block";
 //
 // We own exactly two key paths and preserve everything else:
 //   agents.defaults.model.primary  -> the selected model
-//   models.providers.haimaker      -> our provider block (carries the API key)
+//   models.providers.haimaker      -> our provider block (carries the API key
+//                                     and the selected model + catalog)
 // ---------------------------------------------------------------------------
 
 /** Directory name openclaw keeps its config under, relative to the home root. */
 const OPENCLAW_DIR = ".openclaw";
 /** Config file name within OPENCLAW_DIR. */
 const OPENCLAW_FILE = "openclaw.json";
+/** Limits for models the API reports no limits for (including haimaker/auto). */
+const DEFAULT_CONTEXT_WINDOW = 200000;
+const DEFAULT_MAX_TOKENS = 8192;
 
 export const openclawWriter: AgentWriter = {
   id: "openclaw",
   displayName: "openclaw",
   surface: "chat",
+  registersCatalog: true,
 
   configPath(scope: Scope): string {
     return path.join(homeRoot(scope), OPENCLAW_DIR, OPENCLAW_FILE);
@@ -50,7 +56,7 @@ export const openclawWriter: AgentWriter = {
 
   async configure(ctx: InstallCtx): Promise<void> {
     const baseUrl = baseUrlForSurface(ctx.host, this.surface);
-    const { key, ref } = haimakerModelRef(ctx.model);
+    const { ref } = haimakerModelRef(ctx.model);
 
     // Own our provider block and (only when unset or already ours) the default
     // model; everything else is left untouched. setDeep is idempotent.
@@ -64,14 +70,15 @@ export const openclawWriter: AgentWriter = {
           baseUrl,
           apiKey: ctx.apiKey,
           api: "openai-completions",
-          models: [
-            {
-              id: key,
-              name: haimakerModelLabel(key),
-              contextWindow: 200000,
-              maxTokens: 8192,
-            },
-          ],
+          models: modelsToRegister(ctx.model, ctx.catalog).map((m) => {
+            const id = haimakerModelRef(m.id).key;
+            return {
+              id,
+              name: haimakerModelLabel(id),
+              contextWindow: m.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+              maxTokens: m.maxOutputTokens ?? DEFAULT_MAX_TOKENS,
+            };
+          }),
         });
       },
       { backup: true, createIfMissing: true }

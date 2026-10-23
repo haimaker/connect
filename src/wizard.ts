@@ -9,7 +9,7 @@ import { AgentWriter, InstallCtx, Scope, KeyMode } from "./agents/types";
 import { resolveApiKey } from "./key";
 import { DeviceLoginDeps, DeviceTokenSuccess, printDeviceLoginSummary } from "./device";
 import { ask, pickModelInteractive, promptKeyMode } from "./prompt";
-import { applyAll } from "./apply";
+import { applyAll, loadCatalog } from "./apply";
 
 export interface WizardOpts {
   scope: Scope;
@@ -23,6 +23,8 @@ export interface WizardOpts {
     deps?: DeviceLoginDeps;
   };
   pickModel?: boolean;
+  /** Register only the selected model (--single-model). */
+  singleModel?: boolean;
   /** Explicit --key-mode from the CLI; when undefined the wizard prompts if relevant. */
   keyMode?: KeyMode;
 }
@@ -103,10 +105,11 @@ export async function runWizard(opts: WizardOpts): Promise<number> {
     return 1;
   }
 
-  // 3. Optional model picker.
+  // 3. Model catalog + optional model picker.
+  const { fetched, catalog } = await loadCatalog(chosen, opts.host, apiKey, opts);
   let model = opts.model;
   if (opts.pickModel) {
-    model = await pickModelInteractive(opts.host, apiKey, model);
+    model = await pickModelInteractive(opts.host, apiKey, model, fetched);
   }
 
   // 3b. Key-handling mode. Honor an explicit --key-mode; otherwise prompt only
@@ -124,6 +127,7 @@ export async function runWizard(opts: WizardOpts): Promise<number> {
     model,
     verify: opts.verify,
     keyMode,
+    catalog,
   };
   const { configFailures, verifyFailures, insufficientCredits } = await applyAll(chosen, ctx);
 

@@ -14,6 +14,7 @@ import lockfile from "proper-lockfile";
 import { AgentWriter, InstallCtx, Scope, VerifyResult } from "./types";
 import { baseUrlForSurface, haimakerModelLabel, haimakerModelRef } from "../endpoint";
 import { verifyForCtx } from "../verify";
+import { modelsToRegister, ModelInfo } from "../models";
 import { homeRoot } from "./paths";
 import { dirExists, pathExists } from "../fs/exists";
 import { editJsonConfig } from "../fs/json-config";
@@ -28,6 +29,28 @@ const PROVIDER_ID = "haimaker";
 // represented by Pi's static per-model cost fields, so cost remains zero.
 const ROUTER_CONTEXT_WINDOW = 32768;
 const ROUTER_MAX_TOKENS = 4096;
+
+/**
+ * One Pi model record. Capabilities stay enabled (as for the auto-router): Pi
+ * only sends reasoning settings once the user picks a thinking level, and
+ * /v1/models does not say what each model supports. The auto-router keeps the
+ * conservative router limits; a concrete model uses the limits the API reports,
+ * else the router limits. Cost stays zero: Pi needs static prices that the
+ * listing doesn't provide.
+ */
+function piModel(m: ModelInfo): Record<string, unknown> {
+  const id = haimakerModelRef(m.id).key;
+  const router = id === "auto";
+  return {
+    id,
+    name: haimakerModelLabel(id),
+    reasoning: true,
+    input: ["text", "image"],
+    contextWindow: (!router && m.contextWindow) || ROUTER_CONTEXT_WINDOW,
+    maxTokens: (!router && m.maxOutputTokens) || ROUTER_MAX_TOKENS,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  };
+}
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -113,6 +136,7 @@ export const piWriter: AgentWriter = {
   id: "pi",
   displayName: "Pi",
   surface: "chat",
+  registersCatalog: true,
 
   async detect(scope: Scope): Promise<boolean> {
     return dirExists(agentDir(scope));
@@ -146,17 +170,7 @@ export const piWriter: AgentWriter = {
           name: "Haimaker",
           baseUrl: baseUrlForSurface(ctx.host, this.surface),
           api: "openai-completions",
-          models: [
-            {
-              id: key,
-              name: haimakerModelLabel(key),
-              reasoning: true,
-              input: ["text", "image"],
-              contextWindow: ROUTER_CONTEXT_WINDOW,
-              maxTokens: ROUTER_MAX_TOKENS,
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            },
-          ],
+          models: modelsToRegister(ctx.model, ctx.catalog).map(piModel),
         });
       },
       { backup: true, createIfMissing: true }
