@@ -310,3 +310,31 @@ describe("opencodeWriter - verify (mocked fetch, no network)", () => {
     }
   });
 });
+
+const CATALOG = [
+  { id: "haimaker/auto" },
+  { id: "deepseek/deepseek-v4-flash" },
+  { id: "openai/gpt-5", contextWindow: 400000, maxOutputTokens: 128000 },
+];
+
+describe("opencodeWriter - catalog", () => {
+  it("registers every catalog model, with limits when both are known", async () => {
+    const dir = tmp();
+    await opencodeWriter.configure(userCtx(dir, { catalog: CATALOG }));
+    const cfg = readConfig(opencodeWriter.configPath({ kind: "user", dir }));
+    expect(cfg.provider.haimaker.models).toEqual({
+      auto: { name: "Haimaker Auto" },
+      "deepseek/deepseek-v4-flash": { name: "Haimaker deepseek/deepseek-v4-flash" },
+      "openai/gpt-5": { name: "Haimaker openai/gpt-5", limit: { context: 400000, output: 128000 } },
+    });
+    expect(cfg.model).toBe("haimaker/auto");
+  });
+
+  it("re-running with a smaller catalog drops models that are gone", async () => {
+    const dir = tmp();
+    await opencodeWriter.configure(userCtx(dir, { catalog: CATALOG }));
+    await opencodeWriter.configure(userCtx(dir, { catalog: CATALOG.slice(0, 1) }));
+    const cfg = readConfig(opencodeWriter.configPath({ kind: "user", dir }));
+    expect(Object.keys(cfg.provider.haimaker.models)).toEqual(["auto"]);
+  });
+});

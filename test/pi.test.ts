@@ -446,3 +446,31 @@ describe("piWriter verify", () => {
     expect(JSON.parse(calls[0].init.body).model).toBe("auto");
   });
 });
+
+const CATALOG = [
+  { id: "haimaker/auto" },
+  { id: "deepseek/deepseek-v4-flash" },
+  { id: "openai/gpt-5", contextWindow: 400000, maxOutputTokens: 128000 },
+];
+
+describe("piWriter configure - catalog", () => {
+  it("registers every catalog model; the router keeps its conservative limits", async () => {
+    const dir = tmp();
+    await piWriter.configure(ctx(dir, { catalog: CATALOG }));
+    const config = readConfig(dir, "models.json");
+    expectPiModelsSchema(config);
+    const models = config.providers.haimaker.models;
+    expect(models.map((m: any) => m.id)).toEqual(["auto", "deepseek/deepseek-v4-flash", "openai/gpt-5"]);
+    expect(models[0]).toMatchObject({ contextWindow: 32768, maxTokens: 4096 });
+    expect(models[1]).toMatchObject({ contextWindow: 32768, maxTokens: 4096 });
+    expect(models[2]).toMatchObject({ contextWindow: 400000, maxTokens: 128000 });
+    expect(readConfig(dir, "settings.json")).toMatchObject({ defaultProvider: "haimaker", defaultModel: "auto" });
+  });
+
+  it("keeps owning the default when it switches between catalog models", async () => {
+    const dir = tmp();
+    await piWriter.configure(ctx(dir, { catalog: CATALOG }));
+    await piWriter.configure(ctx(dir, { catalog: CATALOG, model: "openai/gpt-5" }));
+    expect(readConfig(dir, "settings.json")).toMatchObject({ defaultModel: "openai/gpt-5" });
+  });
+});

@@ -12,7 +12,34 @@ const MAX_MODELS = 1000;
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 interface ModelsResponse {
-  data?: Array<{ id?: string }>;
+  data?: Array<{ id?: unknown; max_input_tokens?: unknown; max_output_tokens?: unknown }>;
+}
+
+/** One model from GET /v1/models, with the limits Haimaker reports when known. */
+export interface ModelInfo {
+  id: string;
+  /** Max input (context) tokens, when the API reports it. */
+  contextWindow?: number;
+  /** Max output tokens, when the API reports it. */
+  maxOutputTokens?: number;
+}
+
+/**
+ * Ids that are not chat models: image, video, audio, speech, embedding,
+ * reranking, and moderation models, plus sized image variants like
+ * "openai/high/1024-x-1024/gpt-image-1". A coding agent can't use these, and
+ * they would crowd its model picker.
+ */
+const NON_CHAT_MODEL =
+  /embed|rerank|moderation|\btts\b|-tts|whisper|transcri|realtime|audio|speech|image|imagine|video|dall-e|\d+-x-\d+/i;
+
+/** True when `id` looks like a chat model a coding agent can use. */
+export function isChatModel(id: string): boolean {
+  return !NON_CHAT_MODEL.test(id);
+}
+
+function positiveInt(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 /**
@@ -79,22 +106,23 @@ export async function fetchWithTimeout(
 }
 
 /**
- * Fetch the available model ids from GET {host}/v1/models.
+ * Fetch the model catalog from GET {host}/v1/models.
  *
  * - Sends Authorization: Bearer <apiKey>.
- * - Parses OpenAI-style { data: [{ id }] }.
- * - FILTERS OUT wildcard rows (any id containing "*", e.g. "*", "openai/*").
- * - INJECTS "haimaker/auto" as the first element (the /v1/models listing does
- *   not include it), de-duplicating if it already appears.
+ * - Parses OpenAI-style { data: [{ id, max_input_tokens?, max_output_tokens? }] }.
+ * - Drops wildcard rows (any id containing "*", e.g. "*", "openai/*") and
+ *   non-chat models (see isChatModel).
+ * - Puts "haimaker/auto" first (the listing does not include it), then the rest
+ *   sorted by id, de-duplicated.
  *
  * Accepts an injectable fetch for tests. Throws on non-200.
  */
-export async function fetchModels(
+export async function fetchModelCatalog(
   host: string,
   apiKey: string,
   fetchImpl: FetchLike = fetch,
   timeoutMs: number = REQUEST_TIMEOUT_MS
-): Promise<string[]> {
+): Promise<ModelInfo[]> {
   const url = `${host}/v1/models`;
   const res = await fetchWithTimeout(
     fetchImpl,
@@ -116,14 +144,40 @@ export async function fetchModels(
   const body = await readJsonCapped<ModelsResponse>(res, MAX_RESPONSE_BYTES);
   const rows = Array.isArray(body?.data) ? body.data.slice(0, MAX_MODELS) : [];
 
-  const deduped: string[] = [];
-  const seen = new Set<string>([DEFAULT_MODEL]);
+  const byId = new Map<string, ModelInfo>();
   for (const row of rows) {
-    const id = row && typeof row.id === "string" ? row.id : "";
-    if (!id || id.includes("*") || seen.has(id)) continue;
-    seen.add(id);
-    deduped.push(id);
+    const id = row && typeof row.id === "string" ? row.id.trim() : "";
+    if (!id || id === DEFAULT_MODEL || id.includes("*") || byId.has(id) || !isChatModel(id)) continue;
+    const info: ModelInfo = { id };
+    const contextWindow = positiveInt(row.max_input_tokens);
+    const maxOutputTokens = positiveInt(row.max_output_tokens);
+    if (contextWindow) info.contextWindow = contextWindow;
+    if (maxOutputTokens) info.maxOutputTokens = maxOutputTokens;
+    byId.set(id, info);
   }
 
-  return [DEFAULT_MODEL, ...deduped];
+  const rest = [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return [{ id: DEFAULT_MODEL }, ...rest];
+}
+
+/** Model ids from GET {host}/v1/models: "haimaker/auto" first, chat models only. */
+export async function fetchModels(
+  host: string,
+  apiKey: string,
+  fetchImpl: FetchLike = fetch,
+  timeoutMs: number = REQUEST_TIMEOUT_MS
+): Promise<string[]> {
+  const catalog = await fetchModelCatalog(host, apiKey, fetchImpl, timeoutMs);
+  return catalog.map((m) => m.id);
+}
+
+/**
+ * The models a writer should register: the fetched catalog when there is one,
+ * always including the selected model (first, if the catalog lacks it). Without
+ * a catalog this is just the selected model, which is the pre-catalog behavior.
+ */
+export function modelsToRegister(selected: string, catalog?: readonly ModelInfo[]): ModelInfo[] {
+  if (!catalog || catalog.length === 0) return [{ id: selected }];
+  if (catalog.some((m) => m.id === selected)) return [...catalog];
+  return [{ id: selected }, ...catalog];
 }

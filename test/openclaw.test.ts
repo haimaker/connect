@@ -227,3 +227,23 @@ describe("verify - chat surface (no live network)", () => {
     expect(calls[0].init.headers.Authorization).toBe(`Bearer ${KEY}`);
   });
 });
+
+const CATALOG = [
+  { id: "haimaker/auto" },
+  { id: "deepseek/deepseek-v4-flash" },
+  { id: "openai/gpt-5", contextWindow: 400000, maxOutputTokens: 128000 },
+];
+
+describe("configure - catalog", () => {
+  it("registers every catalog model, defaulting unknown limits", async () => {
+    const dir = tmp();
+    await openclawWriter.configure(ctx(dir, { catalog: CATALOG }));
+    const cfg = readJson(dir);
+    expect(cfg.models.providers.haimaker.models).toEqual([
+      { id: "auto", name: "Haimaker Auto", contextWindow: 200000, maxTokens: 8192 },
+      { id: "deepseek/deepseek-v4-flash", name: "Haimaker deepseek/deepseek-v4-flash", contextWindow: 200000, maxTokens: 8192 },
+      { id: "openai/gpt-5", name: "Haimaker openai/gpt-5", contextWindow: 400000, maxTokens: 128000 },
+    ]);
+    expect(cfg.agents.defaults.model.primary).toBe("haimaker/auto");
+  });
+});

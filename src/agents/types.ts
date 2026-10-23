@@ -3,6 +3,8 @@
 // These interfaces are the foundation that all per-agent writers implement.
 // Keep them stable: writer agents depend on the exact shapes below.
 
+import type { ModelInfo } from "../models";
+
 /**
  * The HTTP surface an agent expects to talk to.
  * - "messages"  -> Anthropic-style /v1/messages (Claude Code). Base URL is the bare host root.
@@ -58,6 +60,11 @@ export interface InstallCtx {
   verify: boolean;
   /** Key-provisioning strategy. Writers that don't care may ignore it; absent => "env". */
   keyMode?: KeyMode;
+  /**
+   * Models from GET /v1/models to register alongside `model`, for agents that
+   * keep a static model list. Absent => register only `model`.
+   */
+  catalog?: ModelInfo[];
 }
 
 /**
@@ -96,6 +103,11 @@ export interface AgentWriter {
    * shell startup file so it's set automatically.
    */
   usesShellEnvKey?: boolean;
+  /**
+   * The writer registers the GET /v1/models catalog (InstallCtx.catalog) as a
+   * static model list, so connect fetches it before configuring.
+   */
+  registersCatalog?: boolean;
   detect(scope: Scope): Promise<boolean>;
   configPath(scope: Scope): string;
   configure(ctx: InstallCtx): Promise<void>;

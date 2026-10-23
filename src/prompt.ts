@@ -4,7 +4,7 @@
 // non-secret prompts.
 
 import * as readline from "readline";
-import { fetchModels } from "./models";
+import { fetchModels, ModelInfo } from "./models";
 import { KeyMode } from "./agents/types";
 
 /**
@@ -40,11 +40,13 @@ export function ask(prompt: string): Promise<string> {
 export async function pickModelInteractive(
   host: string,
   apiKey: string,
-  fallback: string
+  fallback: string,
+  /** An already-fetched catalog, to skip a second GET /v1/models. */
+  catalog?: readonly ModelInfo[]
 ): Promise<string> {
   let models: string[];
   try {
-    models = await fetchModels(host, apiKey);
+    models = catalog ? catalog.map((m) => m.id) : await fetchModels(host, apiKey);
   } catch (err) {
     console.error(`Could not fetch models (${(err as Error).message}); using ${fallback}.`);
     return fallback;

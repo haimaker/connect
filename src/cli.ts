@@ -11,7 +11,7 @@ import { DEFAULT_HOST, DEFAULT_MODEL, KEYS_URL, API_KEY_ENV, validateHost } from
 import { resolveApiKey } from "./key";
 import { DeviceTokenSuccess, printDeviceLoginSummary } from "./device";
 import { pickModelInteractive, promptKeyMode } from "./prompt";
-import { applyAll } from "./apply";
+import { applyAll, loadCatalog } from "./apply";
 import { removeProfileExport } from "./fs/shell-profile";
 import { runWizard } from "./wizard";
 
@@ -36,6 +36,7 @@ interface ParsedArgs {
   allowInsecureHost: boolean;
   keyMode?: KeyMode;
   pickModel: boolean;
+  singleModel: boolean;
   apiKey?: string;
   login: boolean;
   noLogin: boolean;
@@ -53,6 +54,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     project: false,
     allowInsecureHost: false,
     pickModel: false,
+    singleModel: false,
     login: false,
     noLogin: false,
     verify: true,
@@ -126,6 +128,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       case "--pick-model":
         out.pickModel = true;
         break;
+      case "--single-model":
+        out.singleModel = true;
+        break;
       case "--no-verify":
         out.verify = false;
         break;
@@ -174,6 +179,9 @@ Options:
   --dir <path>           Override the base config home (testing / sandboxing).
   --model <id>           Model to configure (default: ${DEFAULT_MODEL}).
   --pick-model           Interactively pick a model from GET /v1/models.
+  --single-model         Register only the selected model. By default connect also
+                         adds every chat model from GET /v1/models to agents that
+                         keep a model list (opencode, Kilo Code, OpenClaw, Pi).
   --api-key <key>        API key (DISCOURAGED — visible in shell history; prefer
                          device login, the HAIMAKER_API_KEY env var, or the hidden prompt).
   --login                Force browser device login, ignoring HAIMAKER_API_KEY.
@@ -333,6 +341,7 @@ export async function run(argv: string[]): Promise<number> {
         mode: args.login ? "force" : args.noLogin ? "off" : "default",
       },
       pickModel: args.pickModel,
+      singleModel: args.singleModel,
       keyMode: args.keyMode,
     });
   }
@@ -393,10 +402,11 @@ export async function run(argv: string[]): Promise<number> {
     return 1;
   }
 
-  // Determine the model.
+  // Determine the model, and the catalog to register alongside it.
+  const { fetched, catalog } = await loadCatalog(selected, host, apiKey, args);
   let model = args.model ?? DEFAULT_MODEL;
   if (args.pickModel) {
-    model = await pickModelInteractive(host, apiKey, model);
+    model = await pickModelInteractive(host, apiKey, model, fetched);
   }
 
   // Determine how to provision the key. Honor an explicit --key-mode; otherwise,
@@ -407,7 +417,7 @@ export async function run(argv: string[]): Promise<number> {
   }
 
   // Configure + verify each selected agent.
-  const ctx: InstallCtx = { scope, host, apiKey, model, verify: args.verify, keyMode };
+  const ctx: InstallCtx = { scope, host, apiKey, model, verify: args.verify, keyMode, catalog };
   const { configFailures, verifyFailures, insufficientCredits } = await applyAll(selected, ctx);
 
   if (login) {

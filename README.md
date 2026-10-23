@@ -39,6 +39,19 @@ By default it configures the `haimaker/auto` model (an auto-router that picks a
 model per request) and runs one live request to confirm the connection works
 before exiting.
 
+Every Haimaker chat model is selectable in each agent's model picker:
+
+- **opencode, Kilo Code, OpenClaw, Pi** keep a static model list, so connect
+  fetches `GET /v1/models` and registers every chat model (image, audio,
+  embedding, and moderation models are skipped), with context and output limits
+  where Haimaker reports them. Re-run connect to pick up new models. Pass
+  `--single-model` to register only the selected model.
+- **Hermes and Cline** fetch `/v1/models` themselves in their `/model` pickers,
+  so they list every model with no extra config.
+- **Claude Code and Codex** list only their own models in `/model`. Use any
+  Haimaker model with `--model <id>`, e.g. `claude --model deepseek/deepseek-v4-flash`
+  or `codex -m deepseek/deepseek-v4-flash`.
+
 ---
 
 ## Supported agents
@@ -93,6 +106,7 @@ configures and verifies each one. The hidden paste prompt is the fallback.
 | `--project` | Write project-local config in the current repo and add the key-bearing file to `.gitignore`. opencode only. |
 | `--model <id>` | Model to configure (default `haimaker/auto`). e.g. `openai/gpt-4o`, `deepseek/deepseek-v3`. |
 | `--pick-model` | Pick a model interactively from `GET /v1/models`. |
+| `--single-model` | Register only the selected model instead of the full model list. |
 | `--api-key <key>` | Pass the key inline. Discouraged: it lands in your shell history, so prefer device login, `HAIMAKER_API_KEY`, or the hidden prompt. |
 | `--login` | Force browser device login, even when `HAIMAKER_API_KEY` is set. Useful for explicit non-interactive runs that can be approved elsewhere. |
 | `--no-login` | Disable device login and use the hidden paste prompt on an interactive terminal. |
@@ -185,8 +199,9 @@ npx @haimaker/connect --uninstall --claude
 Pi is configured through its native `~/.pi/agent/models.json`, `auth.json`, and
 `settings.json` files. The Haimaker API key stays in Pi's credential file rather
 than the model catalog. Because Pi's auto-router needs one static model record,
-connect advertises conservative 32k context and 4k output limits while enabling
-reasoning and image input; per-route pricing cannot be represented, so Pi's local
+connect advertises conservative 32k context and 4k output limits for it (and for
+listed models whose limits Haimaker doesn't report) while enabling reasoning and
+image input; per-route pricing cannot be represented, so Pi's local
 cost display remains zero. Pi accepts JSONC in `models.json`, but connect rewrites
 that file as plain JSON, so comments are not preserved. This integration targets
 the stock `pi` build; rebranded builds with a different app name or config
@@ -225,7 +240,7 @@ Hermes' default `auto` — but if you've deliberately selected a named provider,
   pass `--allow-insecure-host`.
 - Network calls time out instead of hanging.
 - No telemetry. Its requests are limited to device login, listing models
-  (`--pick-model`), and the verify call.
+  (`--pick-model`, and the model list for agents that keep one), and the verify call.
 
 ---
 

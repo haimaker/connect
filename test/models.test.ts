@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fetchModels } from "../src/models";
+import { fetchModels, fetchModelCatalog, isChatModel, modelsToRegister } from "../src/models";
 
 function mockFetch(body: any, status = 200) {
   const calls: Array<{ url: string; init: any }> = [];
@@ -72,5 +72,61 @@ describe("fetchModels", () => {
         json: async () => ({ data: [] }),
       } as unknown as Response)) as unknown as typeof fetch;
     await expect(fetchModels("https://api.haimaker.ai", "sk", impl)).rejects.toThrow(/too large/i);
+  });
+});
+
+describe("fetchModelCatalog", () => {
+  it("keeps API limits, drops non-chat models, and sorts after haimaker/auto", async () => {
+    const { impl } = mockFetch({
+      data: [
+        { id: "openai/gpt-5", max_input_tokens: 400000, max_output_tokens: 128000 },
+        { id: "openai/high/1024-x-1024/gpt-image-1" },
+        { id: "openai/text-embedding-3-small" },
+        { id: "openai/gpt-realtime" },
+        { id: "anthropic/claude-sonnet-5", max_input_tokens: "lots", max_output_tokens: -1 },
+        { id: "openai/gpt-5" },
+      ],
+    });
+    const catalog = await fetchModelCatalog("https://api.haimaker.ai", "sk", impl);
+    expect(catalog).toEqual([
+      { id: "haimaker/auto" },
+      { id: "anthropic/claude-sonnet-5" },
+      { id: "openai/gpt-5", contextWindow: 400000, maxOutputTokens: 128000 },
+    ]);
+  });
+});
+
+describe("isChatModel", () => {
+  it.each([
+    ["deepseek/deepseek-v4-flash", true],
+    ["openai/gpt-5", true],
+    ["qwen/qwen3-coder", true],
+    ["google/gemini-3-pro-image", false],
+    ["openai/tts-1-hd", false],
+    ["openai/gpt-4o-mini-tts", false],
+    ["openai/whisper-1", false],
+    ["openai/gpt-4o-mini-transcribe", false],
+    ["openai/omni-moderation-latest", false],
+    ["xai/grok-imagine-video", false],
+    ["openai/hd/1024-x-1792/dall-e-3", false],
+    ["cohere/rerank-v3.5", false],
+  ])("%s -> %s", (id, expected) => {
+    expect(isChatModel(id)).toBe(expected);
+  });
+});
+
+describe("modelsToRegister", () => {
+  it("is just the selected model without a catalog", () => {
+    expect(modelsToRegister("openai/gpt-5")).toEqual([{ id: "openai/gpt-5" }]);
+  });
+
+  it("puts a selected model the catalog lacks first", () => {
+    const catalog = [{ id: "haimaker/auto" }, { id: "openai/gpt-5" }];
+    expect(modelsToRegister("custom/model", catalog).map((m) => m.id)).toEqual([
+      "custom/model",
+      "haimaker/auto",
+      "openai/gpt-5",
+    ]);
+    expect(modelsToRegister("openai/gpt-5", catalog)).toEqual(catalog);
   });
 });

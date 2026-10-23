@@ -281,3 +281,23 @@ describe("kiloCodeWriter.verify", () => {
     expect(calledUrl).toBe("https://api.haimaker.ai/v1/chat/completions");
   });
 });
+
+const CATALOG = [
+  { id: "haimaker/auto" },
+  { id: "deepseek/deepseek-v4-flash" },
+  { id: "openai/gpt-5", contextWindow: 400000, maxOutputTokens: 128000 },
+];
+
+describe("kiloCodeWriter.configure - catalog", () => {
+  it("registers every catalog model with tool_call and known limits", async () => {
+    const dir = tmp();
+    await kiloCodeWriter.configure(ctxFor(userScope(dir), { catalog: CATALOG }));
+    const models = readConfig(dir).provider.haimaker.models;
+    expect(Object.keys(models)).toEqual(["auto", "deepseek/deepseek-v4-flash", "openai/gpt-5"]);
+    expect(models["deepseek/deepseek-v4-flash"]).toEqual({
+      name: "Haimaker deepseek/deepseek-v4-flash",
+      tool_call: true,
+    });
+    expect(models["openai/gpt-5"].limit).toEqual({ context: 400000, output: 128000 });
+  });
+});

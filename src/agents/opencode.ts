@@ -24,6 +24,7 @@ import {
   haimakerModelLabel,
 } from "../endpoint";
 import { verifyForCtx } from "../verify";
+import { modelsToRegister, ModelInfo } from "../models";
 import { xdgConfigHome } from "./paths";
 import { dirExists } from "../fs/exists";
 import { ensureGitignored } from "../fs/gitignore";
@@ -57,10 +58,32 @@ function binaryOnPath(name: string): boolean {
   return false;
 }
 
+/**
+ * The provider's `models` map: provider-local key -> { name, limit? }. `limit`
+ * is set only when the API reports both limits (opencode requires both).
+ */
+export function opencodeModels(
+  selected: string,
+  catalog: readonly ModelInfo[] | undefined,
+  extra: Record<string, unknown> = {}
+): Record<string, Record<string, unknown>> {
+  const models: Record<string, Record<string, unknown>> = {};
+  for (const m of modelsToRegister(selected, catalog)) {
+    const { key } = haimakerModelRef(m.id);
+    const entry: Record<string, unknown> = { name: haimakerModelLabel(key), ...extra };
+    if (m.contextWindow && m.maxOutputTokens) {
+      entry.limit = { context: m.contextWindow, output: m.maxOutputTokens };
+    }
+    models[key] = entry;
+  }
+  return models;
+}
+
 export const opencodeWriter: AgentWriter = {
   id: "opencode",
   displayName: "opencode",
   surface: "chat",
+  registersCatalog: true,
   projectScope: true,
 
   async detect(scope: Scope): Promise<boolean> {
@@ -77,7 +100,7 @@ export const opencodeWriter: AgentWriter = {
 
   async configure(ctx: InstallCtx): Promise<void> {
     const baseURL = baseUrlForSurface(ctx.host, this.surface);
-    const { key, ref } = haimakerModelRef(ctx.model);
+    const { ref } = haimakerModelRef(ctx.model);
 
     // Under project scope, protect against committing the key:
     //  1. Refuse if the file is already git-tracked (.gitignore won't help an
@@ -99,8 +122,8 @@ export const opencodeWriter: AgentWriter = {
       this.configPath(ctx.scope),
       (obj) => {
         // Own the entire "haimaker" provider entry (replace on re-run; idempotent).
-        // The provider exposes exactly the selected model, keyed so the agent
-        // resolves "haimaker/<key>" to the right upstream model.
+        // The provider exposes the selected model plus the fetched catalog, each
+        // keyed so the agent resolves "haimaker/<key>" to the right upstream model.
         setDeep(obj, ["provider", "haimaker"], {
           npm: "@ai-sdk/openai-compatible",
           name: "Haimaker",
@@ -108,9 +131,7 @@ export const opencodeWriter: AgentWriter = {
             baseURL,
             apiKey: ctx.apiKey,
           },
-          models: {
-            [key]: { name: haimakerModelLabel(key) },
-          },
+          models: opencodeModels(ctx.model, ctx.catalog),
         });
 
         // Claim the top-level default only when unset or already ours, and store

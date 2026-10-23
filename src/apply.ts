@@ -5,6 +5,35 @@
 import { AgentWriter, InstallCtx, VerifyResult } from "./agents/types";
 import { KEYS_URL, API_KEY_ENV } from "./endpoint";
 import { ensureProfileExport, shellProfilePath } from "./fs/shell-profile";
+import { fetchModelCatalog, ModelInfo } from "./models";
+
+/**
+ * Fetch GET /v1/models once, when a selected writer keeps a model list or the
+ * picker needs it. Returns the full listing (`fetched`, for the picker) and the
+ * models writers should register (`catalog`, absent under --single-model).
+ * Best-effort: on failure, warn and fall back to the selected model alone.
+ */
+export async function loadCatalog(
+  writers: AgentWriter[],
+  host: string,
+  apiKey: string,
+  opts: { singleModel?: boolean; pickModel?: boolean }
+): Promise<{ fetched?: ModelInfo[]; catalog?: ModelInfo[] }> {
+  const register = !opts.singleModel && writers.some((w) => w.registersCatalog);
+  if (!register && !opts.pickModel) return {};
+  try {
+    const fetched = await fetchModelCatalog(host, apiKey);
+    return { fetched, catalog: register ? fetched : undefined };
+  } catch (err) {
+    // The picker reports its own fetch failure, so only warn about the catalog.
+    if (register) {
+      console.error(
+        `! Could not fetch the model list (${(err as Error).message}); registering only the selected model.`
+      );
+    }
+    return {};
+  }
+}
 
 /**
  * Configure (and optionally verify) a list of writers.
